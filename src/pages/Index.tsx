@@ -21,11 +21,12 @@ const Index = () => {
   const [showConfirmation, setShowConfirmation] = useState(false);
 
   useEffect(() => {
-    if (!user) {
-      //navigate('/auth');
-    } else {
-      loadUserCards();
-    }
+    // if (!user) {
+    //   //navigate('/auth');
+    // } else {
+    //   loadUserCards();
+    // }
+    loadUserCards();
   }, [user, navigate]);
 
   const loadUserCards = async () => {
@@ -114,7 +115,6 @@ const Index = () => {
     <div className="min-h-screen w-full relative">
       <FloatingBackground />
       <Header />
-
       <main className="pt-32 sm:pt-28 pb-24 sm:pb-16 px-4 sm:px-8 min-h-screen relative z-10">
         <div className="max-w-7xl mx-auto space-y-8">
           <div className="animate-fade-in glass p-6 rounded-3xl">
@@ -138,11 +138,11 @@ const Index = () => {
             {/* Left Column - Timeline */}
             <div className="lg:col-span-2 space-y-6">
               <TimelineWidget />
-              
+
               {/* Dynamic Suggested Adjustments from Backend */}
               <div className="space-y-4">
                 <h2 className="text-lg font-medium px-1">Suggested Adjustments</h2>
-                
+
                 {suggestedCards.length > 0 ? (
                   suggestedCards.map((card) => (
                     <ScheduleCard
