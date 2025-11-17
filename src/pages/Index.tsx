@@ -23,7 +23,7 @@ const Index = () => {
 
   useEffect(() => {
     if (!user) {
-      //navigate('/auth');
+      navigate('/auth');
     } else {
       loadUserCards();
     }
