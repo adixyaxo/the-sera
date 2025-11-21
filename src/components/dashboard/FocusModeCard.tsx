@@ -1,6 +1,6 @@
 import { Zap, Play, Pause, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 
 export const FocusModeCard = () => {
@@ -10,13 +10,49 @@ export const FocusModeCard = () => {
   const [inputMinutes, setInputMinutes] = useState(25);
   const [inputSeconds, setInputSeconds] = useState(0);
 
+  // Normalize function: converts arbitrary hrs/mins/secs into normalized h/m/s
+  const normalizeTime = useCallback((h: number, m: number, s: number) => {
+    // clamp negatives to zero
+    let totalSeconds = Math.max(0, Math.trunc(h)) * 3600 + Math.max(0, Math.trunc(m)) * 60 + Math.max(0, Math.trunc(s));
+
+    const nh = Math.floor(totalSeconds / 3600);
+    totalSeconds -= nh * 3600;
+    const nm = Math.floor(totalSeconds / 60);
+    const ns = totalSeconds - nm * 60;
+
+    return { nh, nm, ns, totalSeconds: nh * 3600 + nm * 60 + ns };
+  }, []);
+
+  // action setters which normalize on input change (useful for onBlur or immediate normalization)
+  const handleHoursChange = (raw: number) => {
+    const { nh, nm, ns } = normalizeTime(raw, inputMinutes, inputSeconds);
+    setInputHours(nh);
+    setInputMinutes(nm);
+    setInputSeconds(ns);
+  };
+
+  const handleMinutesChange = (raw: number) => {
+    const { nh, nm, ns } = normalizeTime(inputHours, raw, inputSeconds);
+    setInputHours(nh);
+    setInputMinutes(nm);
+    setInputSeconds(ns);
+  };
+
+  const handleSecondsChange = (raw: number) => {
+    const { nh, nm, ns } = normalizeTime(inputHours, inputMinutes, raw);
+    setInputHours(nh);
+    setInputMinutes(nm);
+    setInputSeconds(ns);
+  };
+
+  // initialTotal derived from normalized inputs
   const initialTotal = inputHours * 3600 + inputMinutes * 60 + inputSeconds;
   const [timeLeft, setTimeLeft] = useState(initialTotal);
 
-  // Reset timer when inputs change
+  // Keep timeLeft in sync when inputs change (but don't override while running)
   useEffect(() => {
-    setTimeLeft(initialTotal);
-  }, [inputHours, inputMinutes, inputSeconds]);
+    if (!isActive) setTimeLeft(initialTotal);
+  }, [inputHours, inputMinutes, inputSeconds, initialTotal, isActive]);
 
   // -------------------- TIMER EFFECT --------------------
   useEffect(() => {
@@ -24,7 +60,7 @@ export const FocusModeCard = () => {
 
     if (isActive && timeLeft > 0) {
       interval = window.setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
+        setTimeLeft((prev) => Math.max(0, prev - 1));
       }, 1000);
     }
 
@@ -33,7 +69,7 @@ export const FocusModeCard = () => {
     }
 
     return () => {
-      if (interval) clearInterval(interval);
+      if (interval) window.clearInterval(interval);
     };
   }, [isActive, timeLeft]);
 
@@ -46,8 +82,9 @@ export const FocusModeCard = () => {
   };
 
   // -------------------- DISPLAY VALUES --------------------
-  const minutes = Math.floor(timeLeft / 60);
-  const seconds = timeLeft % 60;
+  const displayHours = Math.floor(timeLeft / 3600);
+  const displayMinutes = Math.floor((timeLeft % 3600) / 60);
+  const displaySeconds = timeLeft % 60;
   const progress = initialTotal > 0 ? ((initialTotal - timeLeft) / initialTotal) * 100 : 0;
 
   return (
@@ -63,7 +100,15 @@ export const FocusModeCard = () => {
             variant="ghost"
             size="icon"
             className="rounded-full hover:bg-accent/10 transition-smooth"
-            onClick={resetTimer}
+            onClick={() => {
+              // normalize inputs before reset so UI shows normalized values
+              const { nh, nm, ns, totalSeconds } = normalizeTime(inputHours, inputMinutes, inputSeconds);
+              setInputHours(nh);
+              setInputMinutes(nm);
+              setInputSeconds(ns);
+              setIsActive(false);
+              setTimeLeft(totalSeconds);
+            }}
           >
             <RotateCcw className="h-4 w-4" />
           </Button>
@@ -86,27 +131,28 @@ export const FocusModeCard = () => {
           min="0"
           className="w-16 p-2 rounded-lg bg-background border"
           value={inputHours}
-          onChange={(e) => setInputHours(Number(e.target.value))}
+          onChange={(e) => setInputHours(Number(e.target.value || 0))}
+          onBlur={(e) => handleHoursChange(Number(e.target.value || 0))}
         />
         <span className="text-muted-foreground">hrs</span>
 
         <input
           type="number"
           min="0"
-          max="59"
           className="w-16 p-2 rounded-lg bg-background border"
           value={inputMinutes}
-          onChange={(e) => setInputMinutes(Number(e.target.value))}
+          onChange={(e) => setInputMinutes(Number(e.target.value || 0))}
+          onBlur={(e) => handleMinutesChange(Number(e.target.value || 0))}
         />
         <span className="text-muted-foreground">min</span>
 
         <input
           type="number"
           min="0"
-          max="59"
           className="w-16 p-2 rounded-lg bg-background border"
           value={inputSeconds}
-          onChange={(e) => setInputSeconds(Number(e.target.value))}
+          onChange={(e) => setInputSeconds(Number(e.target.value || 0))}
+          onBlur={(e) => handleSecondsChange(Number(e.target.value || 0))}
         />
         <span className="text-muted-foreground">sec</span>
       </div>
@@ -117,7 +163,7 @@ export const FocusModeCard = () => {
           "text-4xl font-light mb-2 transition-smooth",
           isActive && "text-accent"
         )}>
-          {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
+          {String(displayHours).padStart(2, "0")}:{String(displayMinutes).padStart(2, "0")}:{String(displaySeconds).padStart(2, "0")}
         </div>
         <div className="text-sm text-muted-foreground">Deep Work Session</div>
       </div>

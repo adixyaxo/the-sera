@@ -10,7 +10,7 @@ import os
 from dotenv import load_dotenv
 
 # Load environment variables FIRST - before any other imports
-load_dotenv("C:/Users/adity/Desktop/SERA-main/SERA-main/.env")
+load_dotenv(".env")
 
 print("🔧 Environment check:")
 print(f"   GEMINI_API_KEY present: {bool(os.getenv('GEMINI_API_KEY'))}")
