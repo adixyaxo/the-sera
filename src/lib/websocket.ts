@@ -1,72 +1,59 @@
 // src/lib/websocket.ts
+import { supabase } from '@/integrations/supabase/client';
 import { Card } from './api';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 export type WebSocketMessage = 
   | { type: 'new_cards'; session_id: string; cards: Card[] }
   | { type: 'card_updated'; card_id: string; action: string; result: any }
   | { type: 'card_deleted'; card_id: string }
-  | { type: 'current_cards'; cards: Card[] }
-  | { type: 'pong'; timestamp: string };
+  | { type: 'current_cards'; cards: Card[] };
 
 export class WebSocketService {
-  private ws: WebSocket | null = null;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private userId: string;
+  private channel: RealtimeChannel | null = null;
   private messageHandlers: Map<string, ((data: any) => void)[]> = new Map();
 
-  constructor(userId: string = 'default_user') {
-    this.userId = userId;
-  }
+  async connect(): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
 
-  connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      try {
-        this.ws = new WebSocket(`ws://localhost:8000/ws/${this.userId}`);
-        
-        this.ws.onopen = () => {
-          console.log('✅ WebSocket connected');
-          this.reconnectAttempts = 0;
-          this.send({ type: 'subscribe_cards' });
-          resolve();
-        };
-
-        this.ws.onmessage = (event) => {
-          try {
-            const message: WebSocketMessage = JSON.parse(event.data);
-            this.handleMessage(message);
-          } catch (error) {
-            console.error('Error parsing WebSocket message:', error);
+    this.channel = supabase
+      .channel('cards')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'cards',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log('Card change:', payload);
+          
+          if (payload.eventType === 'INSERT') {
+            this.handleMessage({
+              type: 'new_cards',
+              session_id: crypto.randomUUID(),
+              cards: [payload.new as Card],
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            this.handleMessage({
+              type: 'card_updated',
+              card_id: payload.new.card_id,
+              action: payload.new.status,
+              result: payload.new,
+            });
+          } else if (payload.eventType === 'DELETE') {
+            this.handleMessage({
+              type: 'card_deleted',
+              card_id: payload.old.card_id,
+            });
           }
-        };
+        }
+      )
+      .subscribe();
 
-        this.ws.onclose = () => {
-          console.log('WebSocket disconnected');
-          this.attemptReconnect();
-        };
-
-        this.ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
-          reject(error);
-        };
-
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-
-  private attemptReconnect() {
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts++;
-      console.log(`Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-      
-      setTimeout(() => {
-        this.connect().catch(() => {
-          // Reconnection will be attempted again on next close
-        });
-      }, 2000 * this.reconnectAttempts); // Exponential backoff
-    }
+    console.log('✅ Realtime connected');
   }
 
   private handleMessage(message: WebSocketMessage) {
@@ -84,20 +71,10 @@ export class WebSocketService {
     this.messageHandlers.get(type)!.push(handler as any);
   }
 
-  send(message: any) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
-    }
-  }
-
   disconnect() {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    if (this.channel) {
+      supabase.removeChannel(this.channel);
+      this.channel = null;
     }
-  }
-
-  ping() {
-    this.send({ type: 'ping' });
   }
 }

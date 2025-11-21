@@ -1,5 +1,5 @@
 // src/lib/api.ts
-const API_BASE_URL = 'http://localhost:8000/api';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface Card {
   card_id: string;
@@ -55,60 +55,36 @@ export interface CardActionResponse {
 }
 
 class ApiService {
-  private baseUrl: string;
-
-  constructor() {
-    this.baseUrl = API_BASE_URL;
-  }
-
-  async captureText(text: string, userId: string = 'default_user'): Promise<CaptureTextResponse> {
-    const response = await fetch(`${this.baseUrl}/capture/text`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text,
-        user_id: userId,
-      }),
+  async captureText(text: string): Promise<CaptureTextResponse> {
+    const { data, error } = await supabase.functions.invoke('process-text', {
+      body: { text },
     });
 
-    if (!response.ok) {
-      throw new Error(`API error: ${response.statusText}`);
-    }
-
-    return response.json();
+    if (error) throw error;
+    return data;
   }
 
   async handleCardAction(cardId: string, action: CardActionRequest): Promise<CardActionResponse> {
-    const response = await fetch(`${this.baseUrl}/cards/${cardId}/action`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+    const { data, error } = await supabase.functions.invoke('card-action', {
+      body: { 
+        cardId, 
+        action: action.action, 
+        modifications: action.modifications 
       },
-      body: JSON.stringify(action),
     });
 
-    if (!response.ok) {
-      throw new Error(`API error: ${response.statusText}`);
-    }
-
-    return response.json();
+    if (error) throw error;
+    return data;
   }
 
-  async getUserCards(userId: string = 'default_user'): Promise<{ cards: Card[] }> {
-    const response = await fetch(`${this.baseUrl}/user/${userId}/cards`);
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.statusText}`);
-    }
-
-    return response.json();
+  async getUserCards(): Promise<{ cards: Card[] }> {
+    const { data, error } = await supabase.functions.invoke('get-user-cards');
+    if (error) throw error;
+    return data;
   }
 
   async healthCheck(): Promise<any> {
-    const response = await fetch(`${this.baseUrl}/health`);
-    return response.json();
+    return { status: 'healthy', timestamp: new Date().toISOString() };
   }
 }
 

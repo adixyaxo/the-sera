@@ -1,15 +1,15 @@
 // src/hooks/useWebSocket.ts
 import { useEffect, useState, useCallback } from 'react';
-import { WebSocketService, WebSocketMessage } from '@/lib/websocket';
+import { WebSocketService } from '@/lib/websocket';
 import { Card } from '@/lib/api';
 
-export const useWebSocket = (userId: string = 'default_user') => {
+export const useWebSocket = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [wsService, setWsService] = useState<WebSocketService | null>(null);
   const [cards, setCards] = useState<Card[]>([]);
 
   useEffect(() => {
-    const service = new WebSocketService(userId);
+    const service = new WebSocketService();
     setWsService(service);
 
     service.connect()
@@ -38,21 +38,15 @@ export const useWebSocket = (userId: string = 'default_user') => {
     return () => {
       service.disconnect();
     };
-  }, [userId]);
-
-  const send = useCallback((message: any) => {
-    wsService?.send(message);
-  }, [wsService]);
+  }, []);
 
   const handleCardAction = useCallback(async (cardId: string, action: string, modifications?: any) => {
-    // This would typically call your API service
     console.log(`Card action: ${action} on ${cardId}`, modifications);
   }, []);
 
   return {
     isConnected,
     cards,
-    send,
     handleCardAction,
     connect: () => wsService?.connect(),
   };
