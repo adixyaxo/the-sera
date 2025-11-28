@@ -14,16 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      card_tags: {
+        Row: {
+          card_id: string | null
+          created_at: string | null
+          id: string
+          tag_id: string | null
+        }
+        Insert: {
+          card_id?: string | null
+          created_at?: string | null
+          id?: string
+          tag_id?: string | null
+        }
+        Update: {
+          card_id?: string | null
+          created_at?: string | null
+          id?: string
+          tag_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "card_tags_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "cards"
+            referencedColumns: ["card_id"]
+          },
+          {
+            foreignKeyName: "card_tags_tag_id_fkey"
+            columns: ["tag_id"]
+            isOneToOne: false
+            referencedRelation: "tags"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cards: {
         Row: {
           alternatives: Json | null
           card_id: string
           confidence: number | null
           created_at: string | null
+          deadline: string | null
           description: string | null
+          gtd_status: string | null
           id: string
           metadata: Json | null
           primary_action: Json | null
+          priority: string | null
+          project_id: string | null
           status: string | null
           title: string
           type: string
@@ -34,10 +74,14 @@ export type Database = {
           card_id: string
           confidence?: number | null
           created_at?: string | null
+          deadline?: string | null
           description?: string | null
+          gtd_status?: string | null
           id?: string
           metadata?: Json | null
           primary_action?: Json | null
+          priority?: string | null
+          project_id?: string | null
           status?: string | null
           title: string
           type: string
@@ -48,13 +92,71 @@ export type Database = {
           card_id?: string
           confidence?: number | null
           created_at?: string | null
+          deadline?: string | null
           description?: string | null
+          gtd_status?: string | null
           id?: string
           metadata?: Json | null
           primary_action?: Json | null
+          priority?: string | null
+          project_id?: string | null
           status?: string | null
           title?: string
           type?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      projects: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+          status: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      tags: {
+        Row: {
+          color: string | null
+          created_at: string | null
+          id: string
+          name: string
+          user_id: string | null
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string | null
+          id?: string
+          name: string
+          user_id?: string | null
+        }
+        Update: {
+          color?: string | null
+          created_at?: string | null
+          id?: string
+          name?: string
           user_id?: string | null
         }
         Relationships: []
