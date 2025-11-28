@@ -3,7 +3,7 @@ import { QuickCapture } from "@/components/dashboard/QuickCapture";
 import { TimelineWidget } from "@/components/dashboard/TimelineWidget";
 import { FocusModeCard } from "@/components/dashboard/FocusModeCard";
 import { ScheduleCard } from "@/components/dashboard/ScheduleCard";
-import { TasksWidget } from "@/components/dashboard/TasksWidget";
+import { GTDWidget } from "@/components/dashboard/GTDWidget";
 import { ConfirmationDialog } from "@/components/dashboard/ConfirmationDialog";
 import { FloatingBackground } from "@/components/dashboard/FloatingBackground";
 import { useState, useEffect } from 'react';
@@ -12,7 +12,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useNavigate } from "react-router-dom";
-import { Analytics } from "@vercel/analytics/next";
 
 const Index = () => {
   const { user } = useAuth();
@@ -203,7 +202,7 @@ const Index = () => {
             {/* Right Column - Widgets */}
             <div className="space-y-6">
               <FocusModeCard />
-              <TasksWidget />
+              <GTDWidget />
             </div>
           </div>
         </div>

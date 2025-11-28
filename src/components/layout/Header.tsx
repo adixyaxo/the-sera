@@ -1,4 +1,4 @@
-import { LayoutDashboard, Calendar, CheckSquare, FileText, Zap, BarChart3, LogOut, User } from "lucide-react";
+import { LayoutDashboard, Calendar, CheckSquare, Folder, FileText, Zap, BarChart3, LogOut, User } from "lucide-react";
 import { NavBar } from "@/components/ui/tubelight-navbar";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
 export const Header = () => {
@@ -18,6 +19,7 @@ export const Header = () => {
     { name: "Dashboard", url: "/", icon: LayoutDashboard },
     { name: "Calendar", url: "/calendar", icon: Calendar },
     { name: "Tasks", url: "/tasks", icon: CheckSquare },
+    { name: "Projects", url: "/projects", icon: Folder },
     { name: "Notes", url: "/notes", icon: FileText },
     { name: "Automations", url: "/automations", icon: Zap },
     { name: "Analytics", url: "/analytics", icon: BarChart3 },
@@ -29,7 +31,7 @@ export const Header = () => {
   };
 
   return (
-    <div className="flex items-center justify-between w-full px-8">
+    <div className="flex items-center justify-center w-full px-8">
       <NavBar items={navItems} />
 
       {user && (
@@ -40,7 +42,12 @@ export const Header = () => {
                 <User className="h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="glass border-white/10">
+            <DropdownMenuContent align="end" className="glass border-border">
+              <DropdownMenuItem onClick={() => navigate('/profile')}>
+                <User className="h-4 w-4 mr-2" />
+                Profile
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleSignOut}>
                 <LogOut className="h-4 w-4 mr-2" />
                 Sign Out
