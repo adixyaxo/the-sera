@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { DndContext, DragEndEvent, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { useState, useEffect, useCallback } from "react";
+import { DndContext, DragEndEvent, DragOverlay, PointerSensor, useSensor, useSensors, DragStartEvent } from "@dnd-kit/core";
 import { KanbanColumn } from "./KanbanColumn";
 import { TaskCard } from "./TaskCard";
 import { supabase } from "@/integrations/supabase/client";
@@ -27,6 +27,7 @@ export const KanbanBoard = ({ onEditTask, refreshTrigger }: KanbanBoardProps) =>
   const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -36,40 +37,82 @@ export const KanbanBoard = ({ onEditTask, refreshTrigger }: KanbanBoardProps) =>
     })
   );
 
-  useEffect(() => {
-    loadTasks();
-  }, [user, refreshTrigger]);
-
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
     if (!user) return;
 
-    const { data: cardsData } = await supabase
-      .from("cards")
-      .select(`
-        *,
-        project:projects(name),
-        card_tags(tag:tags(*))
-      `)
-      .eq("user_id", user.id)
-      .eq("type", "task");
+    setIsLoading(true);
+    try {
+      const { data: cardsData, error } = await supabase
+        .from("cards")
+        .select(`
+          *,
+          project:projects(name),
+          card_tags(tag:tags(*))
+        `)
+        .eq("user_id", user.id)
+        .eq("type", "task")
+        .neq("status", "reject")
+        .order("created_at", { ascending: false });
 
-    if (cardsData) {
-      const formattedTasks = cardsData.map((card: any) => ({
-        card_id: card.card_id,
-        title: card.title,
-        description: card.description,
-        project_id: card.project_id,
-        priority: card.priority,
-        deadline: card.deadline,
-        gtd_status: card.gtd_status || "LATER",
-        project: card.project,
-        tags: card.card_tags?.map((ct: any) => ct.tag) || [],
-      }));
-      setTasks(formattedTasks);
+      if (error) {
+        console.error("Error loading tasks:", error);
+        toast.error("Failed to load tasks");
+        return;
+      }
+
+      if (cardsData) {
+        const formattedTasks = cardsData
+          .filter((card: any) => card.title && card.title.trim() !== "")
+          .map((card: any) => ({
+            card_id: card.card_id,
+            title: card.title,
+            description: card.description || "",
+            project_id: card.project_id,
+            priority: card.priority || "medium",
+            deadline: card.deadline,
+            gtd_status: card.gtd_status || "LATER",
+            project: card.project,
+            tags: card.card_tags?.map((ct: any) => ct.tag).filter(Boolean) || [],
+          }));
+        setTasks(formattedTasks);
+      }
+    } catch (err) {
+      console.error("Unexpected error loading tasks:", err);
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, [user]);
 
-  const handleDragStart = (event: any) => {
+  useEffect(() => {
+    loadTasks();
+  }, [loadTasks, refreshTrigger]);
+
+  // Set up realtime subscription for task updates
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('gtd-tasks')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'cards',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          loadTasks();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, loadTasks]);
+
+  const handleDragStart = (event: DragStartEvent) => {
     const task = tasks.find((t) => t.card_id === event.active.id);
     setActiveTask(task || null);
   };
@@ -83,6 +126,13 @@ export const KanbanBoard = ({ onEditTask, refreshTrigger }: KanbanBoardProps) =>
     const taskId = active.id as string;
     const newStatus = over.id as string;
 
+    // Optimistic update
+    setTasks((prevTasks) =>
+      prevTasks.map((task) =>
+        task.card_id === taskId ? { ...task, gtd_status: newStatus } : task
+      )
+    );
+
     const { error } = await supabase
       .from("cards")
       .update({ gtd_status: newStatus })
@@ -90,34 +140,69 @@ export const KanbanBoard = ({ onEditTask, refreshTrigger }: KanbanBoardProps) =>
 
     if (error) {
       toast.error("Failed to update task status");
+      loadTasks(); // Revert on error
       return;
     }
 
-    setTasks((tasks) =>
-      tasks.map((task) =>
-        task.card_id === taskId ? { ...task, gtd_status: newStatus } : task
-      )
-    );
-    toast.success("Task moved");
+    toast.success(`Moved to ${newStatus}`);
   };
 
   const handleDeleteTask = async (taskId: string) => {
+    // Optimistic update
+    const previousTasks = tasks;
+    setTasks((prevTasks) => prevTasks.filter((task) => task.card_id !== taskId));
+
     const { error } = await supabase.from("cards").delete().eq("card_id", taskId);
 
     if (error) {
       toast.error("Failed to delete task");
+      setTasks(previousTasks); // Revert on error
       return;
     }
 
-    setTasks((tasks) => tasks.filter((task) => task.card_id !== taskId));
     toast.success("Task deleted");
   };
 
+  const handleCompleteTask = async (taskId: string) => {
+    const previousTasks = tasks;
+    setTasks((prevTasks) => prevTasks.filter((task) => task.card_id !== taskId));
+
+    const { error } = await supabase
+      .from("cards")
+      .update({ status: "completed" })
+      .eq("card_id", taskId);
+
+    if (error) {
+      toast.error("Failed to complete task");
+      setTasks(previousTasks);
+      return;
+    }
+
+    toast.success("Task completed!");
+  };
+
   const columns = [
-    { id: "NOW", title: "NOW", color: "hsl(var(--accent))" },
-    { id: "NEXT", title: "NEXT", color: "hsl(var(--primary))" },
-    { id: "LATER", title: "LATER", color: "hsl(var(--muted-foreground))" },
+    { id: "NOW", title: "NOW", subtitle: "Do it now", color: "hsl(var(--accent))" },
+    { id: "NEXT", title: "NEXT", subtitle: "Do it soon", color: "hsl(var(--primary))" },
+    { id: "LATER", title: "LATER", subtitle: "Someday", color: "hsl(var(--muted-foreground))" },
   ];
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {columns.map((column) => (
+          <div key={column.id} className="glass p-4 rounded-3xl min-h-[400px] animate-pulse">
+            <div className="h-6 w-20 bg-muted rounded mb-4" />
+            <div className="space-y-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-24 bg-muted/50 rounded-2xl" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -127,18 +212,20 @@ export const KanbanBoard = ({ onEditTask, refreshTrigger }: KanbanBoardProps) =>
             key={column.id}
             id={column.id}
             title={column.title}
+            subtitle={column.subtitle}
             color={column.color}
             tasks={tasks.filter((task) => task.gtd_status === column.id)}
             onEditTask={onEditTask}
             onDeleteTask={handleDeleteTask}
+            onCompleteTask={handleCompleteTask}
           />
         ))}
       </div>
 
       <DragOverlay>
         {activeTask && (
-          <div className="opacity-50">
-            <TaskCard task={activeTask} onEdit={() => {}} onDelete={() => {}} />
+          <div className="opacity-80 rotate-2 scale-105">
+            <TaskCard task={activeTask} onEdit={() => {}} onDelete={() => {}} onComplete={() => {}} />
           </div>
         )}
       </DragOverlay>
