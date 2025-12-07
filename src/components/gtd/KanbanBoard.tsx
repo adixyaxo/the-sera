@@ -42,11 +42,11 @@ export const KanbanBoard = ({ onEditTask, refreshTrigger }: KanbanBoardProps) =>
 
     setIsLoading(true);
     try {
+      // Fetch tasks without join - avoiding foreign key requirement
       const { data: cardsData, error } = await supabase
         .from("cards")
         .select(`
           *,
-          project:projects(name),
           card_tags(tag:tags(*))
         `)
         .eq("user_id", user.id)
@@ -60,6 +60,14 @@ export const KanbanBoard = ({ onEditTask, refreshTrigger }: KanbanBoardProps) =>
         return;
       }
 
+      // Fetch projects separately to get names
+      const { data: projectsData } = await supabase
+        .from("projects")
+        .select("id, name")
+        .eq("user_id", user.id);
+
+      const projectMap = new Map(projectsData?.map(p => [p.id, p.name]) || []);
+
       if (cardsData) {
         const formattedTasks = cardsData
           .filter((card: any) => card.title && card.title.trim() !== "")
@@ -71,7 +79,7 @@ export const KanbanBoard = ({ onEditTask, refreshTrigger }: KanbanBoardProps) =>
             priority: card.priority || "medium",
             deadline: card.deadline,
             gtd_status: card.gtd_status || "LATER",
-            project: card.project,
+            project: card.project_id ? { name: projectMap.get(card.project_id) || "" } : undefined,
             tags: card.card_tags?.map((ct: any) => ct.tag).filter(Boolean) || [],
           }));
         setTasks(formattedTasks);
