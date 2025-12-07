@@ -2,8 +2,8 @@ import { useDraggable } from "@dnd-kit/core";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar, Edit, Trash2, Folder } from "lucide-react";
-import { format } from "date-fns";
+import { Calendar, Edit, Trash2, Folder, Check } from "lucide-react";
+import { format, isPast, isToday } from "date-fns";
 
 interface Task {
   card_id: string;
@@ -21,9 +21,10 @@ interface TaskCardProps {
   task: Task;
   onEdit: () => void;
   onDelete: () => void;
+  onComplete: () => void;
 }
 
-export const TaskCard = ({ task, onEdit, onDelete }: TaskCardProps) => {
+export const TaskCard = ({ task, onEdit, onDelete, onComplete }: TaskCardProps) => {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.card_id,
   });
@@ -35,90 +36,121 @@ export const TaskCard = ({ task, onEdit, onDelete }: TaskCardProps) => {
       }
     : undefined;
 
-  const priorityColors = {
-    high: "hsl(var(--destructive))",
-    medium: "hsl(var(--accent))",
-    low: "hsl(var(--muted-foreground))",
+  const priorityConfig = {
+    high: { color: "hsl(var(--destructive))", label: "High" },
+    medium: { color: "hsl(var(--accent))", label: "Medium" },
+    low: { color: "hsl(var(--muted-foreground))", label: "Low" },
   };
+
+  const priority = priorityConfig[task.priority as keyof typeof priorityConfig] || priorityConfig.medium;
+
+  const deadlineDate = task.deadline ? new Date(task.deadline) : null;
+  const isOverdue = deadlineDate && isPast(deadlineDate) && !isToday(deadlineDate);
+  const isDueToday = deadlineDate && isToday(deadlineDate);
 
   return (
     <Card
       ref={setNodeRef}
       style={style}
-      className="glass border-border/50 cursor-grab active:cursor-grabbing group hover:scale-[1.02] transition-smooth"
+      className={`bg-card/80 border-border/30 cursor-grab active:cursor-grabbing group hover:border-border/60 transition-smooth ${
+        isDragging ? "shadow-lg" : ""
+      }`}
       {...attributes}
       {...listeners}
     >
       <CardContent className="p-4">
-        <div className="flex items-start justify-between mb-2">
-          <h4 className="font-medium line-clamp-2 flex-1">{task.title}</h4>
-          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-smooth">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-full"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit();
-              }}
-            >
-              <Edit className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-full hover:bg-destructive/10 hover:text-destructive"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
-          </div>
-        </div>
-
-        {task.description && (
-          <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{task.description}</p>
-        )}
-
-        <div className="flex flex-wrap gap-2 mb-3">
-          <Badge
-            variant="secondary"
-            className="rounded-full text-xs"
-            style={{ borderColor: priorityColors[task.priority as keyof typeof priorityColors] }}
+        <div className="flex items-start gap-3">
+          {/* Complete Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onComplete();
+            }}
+            className="mt-0.5 flex-shrink-0 h-5 w-5 rounded-full border-2 border-border/60 hover:border-accent hover:bg-accent/10 transition-smooth flex items-center justify-center group/check"
           >
-            {task.priority}
-          </Badge>
+            <Check className="h-3 w-3 opacity-0 group-hover/check:opacity-100 text-accent transition-smooth" />
+          </button>
 
-          {task.project && (
-            <Badge variant="outline" className="rounded-full text-xs flex items-center gap-1">
-              <Folder className="h-3 w-3" />
-              {task.project.name}
-            </Badge>
-          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <h4 className="font-medium text-sm line-clamp-2 flex-1">{task.title}</h4>
+              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-smooth flex-shrink-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-lg"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit();
+                  }}
+                >
+                  <Edit className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-lg hover:bg-destructive/10 hover:text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete();
+                  }}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
 
-          {task.deadline && (
-            <Badge variant="outline" className="rounded-full text-xs flex items-center gap-1">
-              <Calendar className="h-3 w-3" />
-              {format(new Date(task.deadline), "MMM d")}
-            </Badge>
-          )}
-        </div>
+            {task.description && (
+              <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{task.description}</p>
+            )}
 
-        {task.tags && task.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {task.tags.map((tag) => (
-              <Badge
-                key={tag.id}
-                className="rounded-full text-xs"
-                style={{ backgroundColor: tag.color }}
-              >
-                {tag.name}
-              </Badge>
-            ))}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <div
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: priority.color }}
+                title={priority.label}
+              />
+
+              {task.project && (
+                <Badge variant="secondary" className="rounded-full text-[10px] py-0 px-2 h-5 flex items-center gap-1">
+                  <Folder className="h-2.5 w-2.5" />
+                  {task.project.name}
+                </Badge>
+              )}
+
+              {task.deadline && (
+                <Badge
+                  variant="secondary"
+                  className={`rounded-full text-[10px] py-0 px-2 h-5 flex items-center gap-1 ${
+                    isOverdue ? "bg-destructive/10 text-destructive" : isDueToday ? "bg-accent/10 text-accent" : ""
+                  }`}
+                >
+                  <Calendar className="h-2.5 w-2.5" />
+                  {format(new Date(task.deadline), "MMM d")}
+                </Badge>
+              )}
+            </div>
+
+            {task.tags && task.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {task.tags.slice(0, 3).map((tag) => (
+                  <Badge
+                    key={tag.id}
+                    className="rounded-full text-[10px] py-0 px-2 h-4"
+                    style={{ backgroundColor: tag.color, color: "white" }}
+                  >
+                    {tag.name}
+                  </Badge>
+                ))}
+                {task.tags.length > 3 && (
+                  <Badge variant="secondary" className="rounded-full text-[10px] py-0 px-2 h-4">
+                    +{task.tags.length - 3}
+                  </Badge>
+                )}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </CardContent>
     </Card>
   );
