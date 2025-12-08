@@ -1,10 +1,16 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Input validation schema
+const processTextSchema = z.object({
+  text: z.string().min(1, "Text is required").max(10000, "Text too long"),
+});
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -12,10 +18,29 @@ serve(async (req) => {
   }
 
   try {
-    const { text } = await req.json();
-    console.log("Processing text:", text);
+    // Validate input
+    const body = await req.json();
+    const validation = processTextSchema.safeParse(body);
+    
+    if (!validation.success) {
+      console.error("Validation error:", validation.error);
+      return new Response(
+        JSON.stringify({ error: validation.error.errors[0].message }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    const { text } = validation.data;
+    console.log("Processing text:", text.substring(0, 100) + "...");
 
-    const authHeader = req.headers.get('Authorization')!;
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Missing authorization header' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -24,7 +49,10 @@ serve(async (req) => {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      throw new Error('User not authenticated');
+      return new Response(
+        JSON.stringify({ error: 'User not authenticated' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Call Lovable AI to process the text
@@ -136,6 +164,8 @@ serve(async (req) => {
       });
 
     if (sessionError) throw sessionError;
+
+    console.log("Successfully processed text and created card:", cardId);
 
     return new Response(
       JSON.stringify({

@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
-import { Plus, Zap, Clock, CalendarClock } from "lucide-react";
+import { Plus, Zap, Clock, CalendarClock, CheckCircle } from "lucide-react";
 import { KanbanBoard } from "@/components/gtd/KanbanBoard";
 import { TaskDialog } from "@/components/gtd/TaskDialog";
+import { CompletedTasksDialog } from "@/components/gtd/CompletedTasksDialog";
 
 const Tasks = () => {
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [completedDialogOpen, setCompletedDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -38,12 +40,21 @@ const Tasks = () => {
                 <h1 className="text-2xl sm:text-3xl font-light mb-1">GTD Task Board</h1>
                 <p className="text-muted-foreground text-sm">Organize your tasks with the NOW / NEXT / LATER workflow</p>
               </div>
-              <Button
-                onClick={handleOpenNewTask}
-                className="rounded-full bg-accent hover:bg-accent/90 shadow-lg shadow-accent/20"
-              >
-                <Plus className="h-4 w-4 mr-2" /> New Task
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setCompletedDialogOpen(true)}
+                  className="rounded-full"
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" /> Completed
+                </Button>
+                <Button
+                  onClick={handleOpenNewTask}
+                  className="rounded-full bg-accent hover:bg-accent/90 shadow-lg shadow-accent/20"
+                >
+                  <Plus className="h-4 w-4 mr-2" /> New Task
+                </Button>
+              </div>
             </div>
 
             {/* Quick Legend */}
@@ -79,6 +90,11 @@ const Tasks = () => {
         onOpenChange={setTaskDialogOpen}
         task={editingTask}
         onSave={handleTaskSaved}
+      />
+
+      <CompletedTasksDialog
+        open={completedDialogOpen}
+        onOpenChange={setCompletedDialogOpen}
       />
     </div>
   );

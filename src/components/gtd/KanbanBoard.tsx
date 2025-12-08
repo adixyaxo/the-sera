@@ -177,7 +177,10 @@ export const KanbanBoard = ({ onEditTask, refreshTrigger }: KanbanBoardProps) =>
 
     const { error } = await supabase
       .from("cards")
-      .update({ status: "completed" })
+      .update({ 
+        status: "completed",
+        completed_at: new Date().toISOString()
+      })
       .eq("card_id", taskId);
 
     if (error) {
