@@ -54,6 +54,7 @@ export type Database = {
         Row: {
           alternatives: Json | null
           card_id: string
+          completed_at: string | null
           confidence: number | null
           created_at: string | null
           deadline: string | null
@@ -72,6 +73,7 @@ export type Database = {
         Insert: {
           alternatives?: Json | null
           card_id: string
+          completed_at?: string | null
           confidence?: number | null
           created_at?: string | null
           deadline?: string | null
@@ -90,6 +92,7 @@ export type Database = {
         Update: {
           alternatives?: Json | null
           card_id?: string
+          completed_at?: string | null
           confidence?: number | null
           created_at?: string | null
           deadline?: string | null
@@ -104,6 +107,48 @@ export type Database = {
           title?: string
           type?: string
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          created_at: string | null
+          full_name: string | null
+          id: string
+          notification_email: boolean | null
+          notification_push: boolean | null
+          theme: string | null
+          timezone: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id?: string
+          notification_email?: boolean | null
+          notification_push?: boolean | null
+          theme?: string | null
+          timezone?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id?: string
+          notification_email?: boolean | null
+          notification_push?: boolean | null
+          theme?: string | null
+          timezone?: string | null
+          updated_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }

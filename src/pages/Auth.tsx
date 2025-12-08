@@ -6,6 +6,18 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
+import { z } from 'zod';
+
+const signInSchema = z.object({
+  email: z.string().email('Please enter a valid email address'),
+  password: z.string().min(1, 'Password is required'),
+});
+
+const signUpSchema = z.object({
+  email: z.string().email('Please enter a valid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  fullName: z.string().min(2, 'Name must be at least 2 characters'),
+});
 
 const Auth = () => {
   const [email, setEmail] = useState('');
@@ -17,8 +29,14 @@ const Auth = () => {
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const validation = signInSchema.safeParse({ email, password });
+    if (!validation.success) {
+      toast.error(validation.error.errors[0].message);
+      return;
+    }
+    
     setLoading(true);
-
     const { error } = await signIn(email, password);
 
     if (error) {
@@ -33,8 +51,14 @@ const Auth = () => {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const validation = signUpSchema.safeParse({ email, password, fullName });
+    if (!validation.success) {
+      toast.error(validation.error.errors[0].message);
+      return;
+    }
+    
     setLoading(true);
-
     const { error } = await signUp(email, password, fullName);
 
     if (error) {
