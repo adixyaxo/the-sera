@@ -52,17 +52,16 @@ export const TaskCard = ({ task, onEdit, onDelete, onComplete }: TaskCardProps) 
     <Card
       ref={setNodeRef}
       style={style}
-      className={`bg-card/80 border-border/30 cursor-grab active:cursor-grabbing group hover:border-border/60 transition-smooth ${
+      className={`bg-card/80 border-border/30 group hover:border-border/60 transition-smooth ${
         isDragging ? "shadow-lg" : ""
       }`}
-      {...attributes}
-      {...listeners}
     >
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
-          {/* Complete Button */}
+          {/* Complete Button - outside drag zone */}
           <button
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               onComplete();
             }}
@@ -71,7 +70,12 @@ export const TaskCard = ({ task, onEdit, onDelete, onComplete }: TaskCardProps) 
             <Check className="h-3 w-3 opacity-0 group-hover/check:opacity-100 text-accent transition-smooth" />
           </button>
 
-          <div className="flex-1 min-w-0">
+          {/* Drag handle area - content */}
+          <div
+            className="flex-1 min-w-0 cursor-grab active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
             <div className="flex items-start justify-between gap-2 mb-1">
               <h4 className="font-medium text-sm line-clamp-2 flex-1">{task.title}</h4>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-smooth flex-shrink-0">
@@ -79,6 +83,7 @@ export const TaskCard = ({ task, onEdit, onDelete, onComplete }: TaskCardProps) 
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6 rounded-lg"
+                  onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
                     onEdit();
@@ -90,6 +95,7 @@ export const TaskCard = ({ task, onEdit, onDelete, onComplete }: TaskCardProps) 
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6 rounded-lg hover:bg-destructive/10 hover:text-destructive"
+                  onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
                     onDelete();
