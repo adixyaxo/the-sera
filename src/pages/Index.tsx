@@ -5,10 +5,11 @@ import { FocusModeCard } from "@/components/dashboard/FocusModeCard";
 import { GTDWidget } from "@/components/dashboard/GTDWidget";
 import { GTDAnalytics } from "@/components/dashboard/GTDAnalytics";
 import { FloatingBackground } from "@/components/dashboard/FloatingBackground";
+import { SeraFAB } from "@/components/sera/SeraFAB";
+import { SeraPlannerCard } from "@/components/sera/SeraPlannerCard";
 import { useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from "react-router-dom";
-
 const Index = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -49,6 +50,7 @@ const Index = () => {
             {/* Right Column - GTD Widgets */}
             <div className="space-y-6">
               <FocusModeCard />
+              <SeraPlannerCard />
               <GTDWidget />
               <GTDAnalytics />
             </div>
@@ -56,7 +58,10 @@ const Index = () => {
         </div>
       </main>
 
-      <div className="fixed bottom-2 right-2 text-[0.5rem] text-muted-foreground/50 select-none z-50">
+      {/* SERA AI Assistant FAB */}
+      <SeraFAB />
+
+      <div className="fixed bottom-2 left-2 text-[0.5rem] text-muted-foreground/50 select-none z-50">
         made by aditya
       </div>
     </div>
