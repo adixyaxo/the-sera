@@ -1,1 +1,19 @@
-project_id = "vbxjpddrnuuiovanucsk"
+project_id = "vpqmoujrxrynldivaamy"
+
+[functions.process-text]
+verify_jwt = true
+
+[functions.card-action]
+verify_jwt = true
+
+[functions.get-user-cards]
+verify_jwt = true
+
+[functions.sera-assistant]
+verify_jwt = true
+
+[functions.sera-planner]
+verify_jwt = true
+
+[functions.sera-execute]
+verify_jwt = true
