@@ -1,65 +1,90 @@
-// src/components/dashboard/QuickCapture.tsx
 import { useState, useRef } from 'react';
-import { Mic, Square, Send } from 'lucide-react';
-import { apiService } from '@/lib/api';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { Mic, MicOff, Send, Sparkles } from 'lucide-react';
+import { useSeraAssistant } from '@/hooks/useSeraAssistant';
+import { useVoiceInput } from '@/hooks/useVoiceInput';
+import { cn } from '@/lib/utils';
 
 interface QuickCaptureProps {
   onNewCards?: (cards: any[]) => void;
 }
 
 export const QuickCapture = ({ onNewCards }: QuickCaptureProps) => {
-  const [isRecording, setIsRecording] = useState(false);
   const [text, setText] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { connect, isConnected } = useWebSocket();
+  const { sendMessage, executeAction, isLoading } = useSeraAssistant();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!text.trim() || isProcessing) return;
+  // Voice input
+  const { 
+    isListening, 
+    isSupported: voiceSupported,
+    toggleListening,
+    stopListening
+  } = useVoiceInput({
+    onTranscript: (transcript) => {
+      setText(transcript);
+      // Auto-submit voice input
+      handleSubmitText(transcript);
+    },
+    onInterimTranscript: (interim) => {
+      setText(interim);
+    },
+  });
 
-    setIsProcessing(true);
+  const handleSubmitText = async (inputText: string) => {
+    if (!inputText.trim() || isLoading) return;
+
     try {
-      const response = await apiService.captureText(text);
-      console.log('Generated cards:', response.cards);
-      onNewCards?.(response.cards);
-      setText(''); // Clear input after successful submission
+      const response = await sendMessage(inputText);
       
-      // Auto-adjust height
+      if (response?.action && 
+          response.action.intent !== 'general_chat' && 
+          response.action.data) {
+        // Auto-execute the action
+        const result = await executeAction(response.action.intent, response.action.data);
+        if (result) {
+          onNewCards?.([result.task]);
+        }
+      }
+      
+      setText('');
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
       }
     } catch (error) {
       console.error('Error capturing text:', error);
-      alert('Failed to process your request. Please try again.');
-    } finally {
-      setIsProcessing(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await handleSubmitText(text);
   };
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
     
-    // Auto-resize textarea
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
     }
   };
 
-  const toggleRecording = () => {
-    setIsRecording(!isRecording);
-    // Audio recording logic would go here
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmitText(text);
+    }
   };
 
   return (
     <div className="animate-fade-in glass p-6 rounded-3xl">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-medium">Quick Capture</h2>
-        <div className="flex items-center gap-2 text-sm">
-          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
-          {isConnected ? 'Connected' : 'Disconnected'}
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-5 h-5 text-primary" />
+          <h2 className="text-lg font-medium">Quick Capture</h2>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span className="text-xs">Powered by SERA AI</span>
         </div>
       </div>
 
@@ -69,44 +94,58 @@ export const QuickCapture = ({ onNewCards }: QuickCaptureProps) => {
             ref={textareaRef}
             value={text}
             onChange={handleTextChange}
-            placeholder="What would you like to schedule? (e.g., 'Meeting with team tomorrow at 2 PM for 1 hour')"
-            className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 pr-12 resize-none focus:outline-none focus:border-white/20 min-h-[60px] max-h-[120px]"
+            onKeyDown={handleKeyDown}
+            placeholder={isListening 
+              ? "Listening... speak now" 
+              : "What would you like to do? (e.g., 'Add a task to review notes tomorrow')"
+            }
+            className={cn(
+              "w-full bg-muted/30 border border-border/50 rounded-2xl px-4 py-3 pr-24 resize-none focus:outline-none focus:border-primary/50 min-h-[60px] max-h-[120px] transition-colors",
+              isListening && "border-red-400/50 bg-red-500/5"
+            )}
             rows={1}
-            disabled={isProcessing}
+            disabled={isLoading}
           />
           
           <div className="absolute right-3 top-3 flex gap-2">
+            {voiceSupported && (
+              <button
+                type="button"
+                onClick={toggleListening}
+                disabled={isLoading}
+                className={cn(
+                  "p-2 rounded-xl transition-all",
+                  isListening 
+                    ? "bg-red-400/20 text-red-400 animate-pulse" 
+                    : "bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+              </button>
+            )}
             <button
-              type="button"
-              onClick={toggleRecording}
-              className={`p-2 rounded-xl transition-all ${
-                isRecording 
-                  ? 'bg-red-400/20 text-red-400' 
-                  : 'bg-white/5 hover:bg-white/10 text-white/60'
-              }`}
+              type="submit"
+              disabled={!text.trim() || isLoading}
+              className="p-2 rounded-xl bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
             >
-              {isRecording ? <Square size={16} /> : <Mic size={16} />}
+              <Send size={16} />
             </button>
           </div>
         </div>
 
         <div className="flex justify-between items-center">
-          <div className="text-sm text-white/40">
-            {isProcessing ? 'Processing...' : 'Press Enter to send'}
-          </div>
-          
-          <button
-            type="submit"
-            disabled={!text.trim() || isProcessing}
-            className="bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed px-4 py-2 rounded-xl transition-all flex items-center gap-2"
-          >
-            {isProcessing ? (
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          <div className="text-sm text-muted-foreground">
+            {isLoading ? (
+              <span className="flex items-center gap-2">
+                <div className="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                SERA is processing...
+              </span>
+            ) : isListening ? (
+              <span className="text-red-400">🎤 Listening...</span>
             ) : (
-              <Send size={16} />
+              'Press Enter to send or use voice input'
             )}
-            Send
-          </button>
+          </div>
         </div>
       </form>
     </div>
