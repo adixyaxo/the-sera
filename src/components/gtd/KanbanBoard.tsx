@@ -42,7 +42,7 @@ export const KanbanBoard = ({ onEditTask, refreshTrigger }: KanbanBoardProps) =>
 
     setIsLoading(true);
     try {
-      // Fetch tasks without join - avoiding foreign key requirement
+      // Fetch tasks - CRITICAL: Filter out completed tasks to fix completion bug
       const { data: cardsData, error } = await supabase
         .from("cards")
         .select(`
@@ -52,6 +52,8 @@ export const KanbanBoard = ({ onEditTask, refreshTrigger }: KanbanBoardProps) =>
         .eq("user_id", user.id)
         .eq("type", "task")
         .neq("status", "reject")
+        .neq("status", "completed")  // FIX: Exclude completed tasks from active board
+        .is("completed_at", null)    // FIX: Also check completed_at is null
         .order("created_at", { ascending: false });
 
       if (error) {
