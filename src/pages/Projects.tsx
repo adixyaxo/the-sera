@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Plus, Folder, Edit, Trash2, ChevronDown, CheckCircle2, Clock, ListTodo, Calendar } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Plus, Folder, Edit, Trash2, ChevronDown, CheckCircle2, Clock, ListTodo, Calendar, Filter, Search } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -38,6 +39,8 @@ interface Project {
   tasks?: Task[];
 }
 
+type StatusFilter = 'all' | 'ACTIVE' | 'ON_HOLD' | 'COMPLETED';
+
 const Projects = () => {
   const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -46,6 +49,8 @@ const Projects = () => {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [formData, setFormData] = useState({ name: "", description: "", status: "ACTIVE" });
   const [isLoading, setIsLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const loadProjects = useCallback(async () => {
     if (!user) return;
@@ -61,7 +66,6 @@ const Projects = () => {
       if (projectsData) {
         const projectsWithDetails = await Promise.all(
           projectsData.map(async (project) => {
-            // Get all tasks for this project
             const { data: tasks } = await supabase
               .from("cards")
               .select("card_id, title, status, gtd_status, priority, deadline")
@@ -76,7 +80,7 @@ const Projects = () => {
               ...project, 
               task_count: taskList.length,
               completed_count: completedTasks.length,
-              tasks: taskList.slice(0, 5), // Only show first 5 tasks in preview
+              tasks: taskList.slice(0, 5),
             };
           })
         );
@@ -91,38 +95,26 @@ const Projects = () => {
     loadProjects();
   }, [loadProjects]);
 
-  // Realtime subscription
   useEffect(() => {
     if (!user) return;
 
     const channel = supabase
       .channel('projects-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'projects',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => loadProjects()
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'cards',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => loadProjects()
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects', filter: `user_id=eq.${user.id}` }, () => loadProjects())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cards', filter: `user_id=eq.${user.id}` }, () => loadProjects())
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [user, loadProjects]);
+
+  const filteredProjects = projects.filter(project => {
+    const matchesStatus = statusFilter === 'all' || project.status === statusFilter;
+    const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         (project.description && project.description.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesStatus && matchesSearch;
+  });
 
   const handleSave = async () => {
     if (!user || !formData.name.trim()) {
@@ -131,23 +123,12 @@ const Projects = () => {
     }
 
     if (editingProject) {
-      const { error } = await supabase
-        .from("projects")
-        .update(formData)
-        .eq("id", editingProject.id);
-      if (error) {
-        toast.error("Failed to update project");
-        return;
-      }
+      const { error } = await supabase.from("projects").update(formData).eq("id", editingProject.id);
+      if (error) { toast.error("Failed to update project"); return; }
       toast.success("Project updated");
     } else {
-      const { error } = await supabase
-        .from("projects")
-        .insert({ ...formData, user_id: user.id });
-      if (error) {
-        toast.error("Failed to create project");
-        return;
-      }
+      const { error } = await supabase.from("projects").insert({ ...formData, user_id: user.id });
+      if (error) { toast.error("Failed to create project"); return; }
       toast.success("Project created");
     }
 
@@ -159,10 +140,7 @@ const Projects = () => {
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const { error } = await supabase.from("projects").delete().eq("id", id);
-    if (error) {
-      toast.error("Failed to delete project");
-      return;
-    }
+    if (error) { toast.error("Failed to delete project"); return; }
     toast.success("Project deleted");
   };
 
@@ -222,39 +200,94 @@ const Projects = () => {
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="animate-fade-in glass p-4 sm:p-6 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+            className="animate-fade-in glass p-4 sm:p-6 rounded-3xl flex flex-col gap-4"
           >
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-light mb-2">Projects</h1>
-              <p className="text-muted-foreground text-sm sm:text-base">
-                {projects.length} project{projects.length !== 1 ? 's' : ''} • Click to expand details
-              </p>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-light mb-2">Projects</h1>
+                <p className="text-muted-foreground text-sm sm:text-base">
+                  {filteredProjects.length} of {projects.length} project{projects.length !== 1 ? 's' : ''} • Click to expand
+                </p>
+              </div>
+              <Button onClick={() => openDialog()} className="rounded-full bg-accent hover:bg-accent/90 shadow-lg shadow-accent/20">
+                <Plus className="h-4 w-4 mr-2" /> New Project
+              </Button>
             </div>
-            <Button onClick={() => openDialog()} className="rounded-full bg-accent hover:bg-accent/90 shadow-lg shadow-accent/20">
-              <Plus className="h-4 w-4 mr-2" /> New Project
-            </Button>
+
+            {/* Filters */}
+            <div className="flex flex-wrap gap-3">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search projects..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 rounded-full"
+                />
+              </div>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="rounded-full gap-2">
+                    <Filter className="h-4 w-4" />
+                    {statusFilter === 'all' ? 'All Status' : statusConfig[statusFilter as keyof typeof statusConfig]?.label}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-48 p-2" align="end">
+                  <div className="space-y-1">
+                    <Button
+                      variant={statusFilter === 'all' ? 'secondary' : 'ghost'}
+                      className="w-full justify-start rounded-xl"
+                      onClick={() => setStatusFilter('all')}
+                    >
+                      All Status
+                    </Button>
+                    {(['ACTIVE', 'ON_HOLD', 'COMPLETED'] as const).map((status) => {
+                      const config = statusConfig[status];
+                      const Icon = config.icon;
+                      return (
+                        <Button
+                          key={status}
+                          variant={statusFilter === status ? 'secondary' : 'ghost'}
+                          className="w-full justify-start rounded-xl"
+                          onClick={() => setStatusFilter(status)}
+                        >
+                          <Icon className="h-4 w-4 mr-2" style={{ color: config.color }} />
+                          {config.label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
           </motion.div>
 
           {/* Empty State */}
-          {projects.length === 0 && (
+          {filteredProjects.length === 0 && (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               className="glass rounded-3xl p-12 text-center"
             >
               <Folder className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
-              <h3 className="text-xl font-medium mb-2">No projects yet</h3>
-              <p className="text-muted-foreground mb-6">Create your first project to organize your tasks</p>
-              <Button onClick={() => openDialog()} className="rounded-full">
-                <Plus className="h-4 w-4 mr-2" /> Create Project
-              </Button>
+              <h3 className="text-xl font-medium mb-2">
+                {projects.length === 0 ? "No projects yet" : "No projects match your filters"}
+              </h3>
+              <p className="text-muted-foreground mb-6">
+                {projects.length === 0 ? "Create your first project to organize your tasks" : "Try adjusting your search or filter"}
+              </p>
+              {projects.length === 0 && (
+                <Button onClick={() => openDialog()} className="rounded-full">
+                  <Plus className="h-4 w-4 mr-2" /> Create Project
+                </Button>
+              )}
             </motion.div>
           )}
 
           {/* Projects Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <AnimatePresence>
-              {projects.map((project, index) => {
+              {filteredProjects.map((project, index) => {
                 const status = statusConfig[project.status as keyof typeof statusConfig] || statusConfig.ACTIVE;
                 const StatusIcon = status.icon;
                 const progress = project.task_count ? Math.round(((project.completed_count || 0) / project.task_count) * 100) : 0;
