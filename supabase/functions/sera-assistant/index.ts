@@ -6,41 +6,33 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// SERA NLU System Prompt
+// SERA NLU System Prompt - improved to ensure clean JSON output
 const SERA_SYSTEM_PROMPT = `You are SERA (Smart Everyday Routine Assistant), an intelligent AI assistant that helps users manage their tasks, schedules, and daily routines.
 
+CRITICAL: You MUST respond with ONLY valid JSON. No markdown, no code blocks, no extra text.
+
 Your capabilities:
-1. **Natural Language Understanding (NLU)**: Parse user requests into structured intents and actions
-2. **Task Management**: Create, update, reschedule, and organize tasks
-3. **Smart Scheduling**: Suggest optimal times and priorities based on context
-4. **Conversational**: Respond naturally while extracting actionable information
+1. Natural Language Understanding: Parse user requests into structured intents
+2. Task Management: Create, update, reschedule, and organize tasks
+3. Smart Scheduling: Suggest optimal times and priorities
+4. Conversational: Respond naturally while extracting actionable information
 
-When users give commands or requests, respond with BOTH:
-1. A friendly, conversational response
-2. A structured JSON action block (when applicable)
-
-For task-related requests, extract:
+For task-related requests, extract these fields:
 - intent: create_task | update_task | reschedule_task | complete_task | delete_task | query_tasks | general_chat
-- title: task title
-- description: task details
-- priority: high | medium | low
-- deadline: ISO date string or relative (today, tomorrow, next week)
-- gtd_status: NOW | NEXT | LATER
-- project: project name if mentioned
+- title: task title (required for create_task)
+- description: task details (optional, use empty string if not provided)
+- priority: high | medium | low (default: medium)
+- deadline: ISO date string or null
+- gtd_status: NOW | NEXT | LATER (default: NEXT)
+- project: project name or null
 
-Format your response as:
-{
-  "message": "Your conversational response here",
-  "action": {
-    "intent": "intent_type",
-    "data": { ... extracted data ... },
-    "confidence": 0.0-1.0
-  }
-}
+ALWAYS respond with this exact JSON structure (no markdown, no code blocks):
+{"message":"Your friendly response here","action":{"intent":"intent_type","data":{"title":"task title","description":"","priority":"medium","deadline":null,"gtd_status":"NEXT"},"confidence":0.95}}
 
-If the request is just a greeting or general chat, set intent to "general_chat" with no data.
+For general chat/greetings:
+{"message":"Your friendly response","action":{"intent":"general_chat","confidence":1.0}}
 
-Current date/time context: ${new Date().toISOString()}`;
+Current date: ${new Date().toISOString()}`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -56,7 +48,6 @@ serve(async (req) => {
       );
     }
 
-    // Get user context
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -94,14 +85,12 @@ serve(async (req) => {
         ).join('\n')}`
       : '\n\nUser has no active tasks.';
 
-    // Build conversation messages
     const messages = [
       { role: 'system', content: SERA_SYSTEM_PROMPT + taskContext },
-      ...conversationHistory.slice(-10), // Keep last 10 messages for context
+      ...conversationHistory.slice(-10),
       { role: 'user', content: message }
     ];
 
-    // Call Lovable AI (Gemini)
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY is not configured');
@@ -116,7 +105,7 @@ serve(async (req) => {
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
         messages,
-        temperature: 0.7,
+        temperature: 0.3, // Lower temperature for more consistent JSON output
       }),
     });
 
@@ -140,17 +129,56 @@ serve(async (req) => {
     }
 
     const aiData = await aiResponse.json();
-    const assistantMessage = aiData.choices?.[0]?.message?.content;
+    let assistantMessage = aiData.choices?.[0]?.message?.content;
 
     if (!assistantMessage) {
       throw new Error('No response from AI');
     }
 
-    // Parse the response to extract action
+    // Clean up the response - remove markdown code blocks if present
+    assistantMessage = assistantMessage.trim();
+    
+    // Remove various markdown formats
+    if (assistantMessage.startsWith('```json')) {
+      assistantMessage = assistantMessage.slice(7);
+    } else if (assistantMessage.startsWith('```')) {
+      assistantMessage = assistantMessage.slice(3);
+    }
+    if (assistantMessage.endsWith('```')) {
+      assistantMessage = assistantMessage.slice(0, -3);
+    }
+    assistantMessage = assistantMessage.trim();
+
+    // Parse the response
     let parsedResponse;
     try {
-      // Try to parse as JSON first
       parsedResponse = JSON.parse(assistantMessage);
+      
+      // Ensure message field exists and is clean
+      if (!parsedResponse.message) {
+        parsedResponse.message = "I understand. Let me help you with that.";
+      }
+      
+      // If message contains nested JSON, extract it
+      if (parsedResponse.message.startsWith('{') || parsedResponse.message.startsWith('```')) {
+        try {
+          let nestedMsg = parsedResponse.message;
+          if (nestedMsg.startsWith('```json')) nestedMsg = nestedMsg.slice(7);
+          if (nestedMsg.startsWith('```')) nestedMsg = nestedMsg.slice(3);
+          if (nestedMsg.endsWith('```')) nestedMsg = nestedMsg.slice(0, -3);
+          const nested = JSON.parse(nestedMsg.trim());
+          if (nested.message) {
+            parsedResponse = nested;
+          }
+        } catch {
+          // Keep original if nested parsing fails
+        }
+      }
+      
+      // Ensure action exists
+      if (!parsedResponse.action) {
+        parsedResponse.action = { intent: 'general_chat', confidence: 1.0 };
+      }
     } catch {
       // If not JSON, wrap the message
       parsedResponse = {

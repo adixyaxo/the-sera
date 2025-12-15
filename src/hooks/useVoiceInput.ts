@@ -47,7 +47,6 @@ interface SpeechRecognitionConstructor {
   new (): SpeechRecognitionInstance;
 }
 
-// Get the SpeechRecognition constructor from window
 function getSpeechRecognition(): SpeechRecognitionConstructor | undefined {
   if (typeof window === 'undefined') return undefined;
   return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -58,6 +57,7 @@ interface UseVoiceInputOptions {
   onInterimTranscript?: (text: string) => void;
   continuous?: boolean;
   language?: string;
+  autoStopOnSilence?: boolean; // Auto-stop after getting final result
 }
 
 export function useVoiceInput(options: UseVoiceInputOptions = {}) {
@@ -65,7 +65,8 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
     onTranscript, 
     onInterimTranscript, 
     continuous = false,
-    language = 'en-US' 
+    language = 'en-US',
+    autoStopOnSilence = true // Default to auto-stop
   } = options;
   
   const [isListening, setIsListening] = useState(false);
@@ -73,9 +74,9 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
   const [transcript, setTranscript] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const hasReceivedFinalResult = useRef(false);
 
   useEffect(() => {
-    // Check browser support
     const SpeechRecognitionAPI = getSpeechRecognition();
     setIsSupported(!!SpeechRecognitionAPI);
 
@@ -87,20 +88,26 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
 
       recognition.onstart = () => {
         setIsListening(true);
+        hasReceivedFinalResult.current = false;
       };
 
       recognition.onend = () => {
         setIsListening(false);
+        setInterimTranscript('');
       };
 
       recognition.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
+        // Only log non-aborted errors
+        if (event.error !== 'aborted') {
+          console.error('Speech recognition error:', event.error);
+        }
         setIsListening(false);
         
         if (event.error === 'not-allowed') {
           toast.error('Microphone access denied. Please enable microphone permissions.');
         } else if (event.error === 'no-speech') {
-          toast.error('No speech detected. Please try again.');
+          // Don't show error for no-speech, just stop silently
+          setInterimTranscript('');
         } else if (event.error !== 'aborted') {
           toast.error(`Voice input error: ${event.error}`);
         }
@@ -120,8 +127,15 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
         }
 
         if (finalTranscript) {
+          hasReceivedFinalResult.current = true;
           setTranscript(finalTranscript);
+          setInterimTranscript('');
           onTranscript?.(finalTranscript);
+          
+          // Auto-stop after receiving final result if not continuous
+          if (autoStopOnSilence && !continuous) {
+            recognition.stop();
+          }
         }
         
         if (interimText) {
@@ -138,7 +152,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
         recognitionRef.current.abort();
       }
     };
-  }, [continuous, language, onTranscript, onInterimTranscript]);
+  }, [continuous, language, onTranscript, onInterimTranscript, autoStopOnSilence]);
 
   const startListening = useCallback(async () => {
     if (!recognitionRef.current) {
@@ -147,11 +161,11 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
     }
 
     try {
-      // Request microphone permission
       await navigator.mediaDevices.getUserMedia({ audio: true });
       
       setTranscript('');
       setInterimTranscript('');
+      hasReceivedFinalResult.current = false;
       recognitionRef.current.start();
     } catch (error) {
       console.error('Microphone access error:', error);

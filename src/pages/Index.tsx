@@ -1,5 +1,4 @@
 import { Header } from "@/components/layout/Header";
-import { QuickCapture } from "@/components/dashboard/QuickCapture";
 import { TimelineWidget } from "@/components/dashboard/TimelineWidget";
 import { FocusModeCard } from "@/components/dashboard/FocusModeCard";
 import { GTDWidget } from "@/components/dashboard/GTDWidget";
@@ -10,6 +9,7 @@ import { SeraPlannerCard } from "@/components/sera/SeraPlannerCard";
 import { useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from "react-router-dom";
+
 const Index = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -35,10 +35,10 @@ const Index = () => {
         <div className="max-w-7xl mx-auto space-y-8">
           <div className="animate-fade-in glass p-6 rounded-3xl">
             <h1 className="text-2xl sm:text-3xl font-light mb-2">{getGreeting()}</h1>
-            <p className="text-muted-foreground text-sm sm:text-base">Here's your productivity overview</p>
+            <p className="text-muted-foreground text-sm sm:text-base">
+              Here's your productivity overview. Use the SERA button below to quickly capture tasks.
+            </p>
           </div>
-
-          <QuickCapture onNewCards={() => {}} />
 
           {/* Main Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
