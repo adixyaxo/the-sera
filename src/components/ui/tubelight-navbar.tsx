@@ -3,8 +3,9 @@
 import React, { useEffect, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { NavLink, useLocation } from "react-router-dom"
-import { LucideIcon, Menu, X } from "lucide-react"
+import { LucideIcon, Menu, X, Mic, MicOff } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { SeraLogo } from "@/components/ui/sera-logo"
 
 interface NavItem {
   name: string
@@ -38,7 +39,6 @@ export function NavBar({ items, className }: NavBarProps) {
   return (
     <div
       className={cn(
-        // 👇 Now placed at top-left with padding
         "fixed top-4 left-4 z-50",
         className,
       )}
@@ -46,6 +46,13 @@ export function NavBar({ items, className }: NavBarProps) {
       {/* === Desktop / Tablet Nav === */}
       {!isMobile && (
         <div className="flex items-center gap-3 glass-strong py-1 px-2 rounded-full shadow-lg backdrop-blur-lg bg-white/10 dark:bg-black/40 border border-white/20">
+          {/* Logo */}
+          <div className="px-3 py-1">
+            <SeraLogo size="sm" showText={true} animated={false} />
+          </div>
+          
+          <div className="w-px h-6 bg-border/50" />
+          
           {items.map((item) => {
             const Icon = item.icon
             const isActive = activeTab === item.name
@@ -80,7 +87,12 @@ export function NavBar({ items, className }: NavBarProps) {
 
       {/* === Mobile Nav (Hamburger Menu) === */}
       {isMobile && (
-        <div className="relative">
+        <div className="relative flex items-center gap-3">
+          {/* Logo for mobile */}
+          <div className="glass-strong rounded-full px-3 py-2 backdrop-blur-lg bg-black/40 border border-white/20">
+            <SeraLogo size="sm" showText={false} animated={false} />
+          </div>
+          
           <motion.button
             onClick={() => setMenuOpen(!menuOpen)}
             className="p-3 rounded-full glass-strong backdrop-blur-lg bg-black/40 text-white shadow-lg border border-white/20"
@@ -96,7 +108,7 @@ export function NavBar({ items, className }: NavBarProps) {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.25 }}
-                className="absolute mt-3 left-0 w-56 glass-strong backdrop-blur-xl bg-black/60 text-white rounded-2xl shadow-xl border border-white/20 overflow-hidden"
+                className="absolute mt-3 top-full left-0 w-56 glass-strong backdrop-blur-xl bg-black/60 text-white rounded-2xl shadow-xl border border-white/20 overflow-hidden"
               >
                 {items.map((item) => {
                   const Icon = item.icon

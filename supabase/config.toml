@@ -17,3 +17,6 @@ verify_jwt = true
 
 [functions.sera-execute]
 verify_jwt = true
+
+[functions.voice-processor]
+verify_jwt = true
