@@ -10,11 +10,11 @@ const corsHeaders = {
 // Input validation schemas
 const createTaskSchema = z.object({
   title: z.string().min(1).max(500),
-  description: z.string().max(2000).optional(),
-  priority: z.enum(['high', 'medium', 'low']).optional().default('medium'),
-  gtd_status: z.enum(['NOW', 'NEXT', 'LATER']).optional().default('NEXT'),
-  deadline: z.string().optional(),
-  project_id: z.string().uuid().optional(),
+  description: z.string().max(2000).nullable().optional(),
+  priority: z.enum(['high', 'medium', 'low']).nullable().optional().default('medium'),
+  gtd_status: z.enum(['NOW', 'NEXT', 'LATER']).nullable().optional().default('NEXT'),
+  deadline: z.string().nullable().optional(),
+  project_id: z.string().uuid().nullable().optional(),
 });
 
 const updateTaskSchema = z.object({
