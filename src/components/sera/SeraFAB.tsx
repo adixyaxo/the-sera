@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Bot, User, Sparkles, X, Loader2, Play, Mic, MicOff, Volume2 } from 'lucide-react';
+import { Send, Bot, User, Sparkles, X, Loader2, Play, Mic, MicOff, Volume2, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useSeraAssistant } from '@/hooks/useSeraAssistant';
-import { useVoiceInput } from '@/hooks/useVoiceInput';
+import { useVoiceInput, VoiceInputStatus } from '@/hooks/useVoiceInput';
 import { cn } from '@/lib/utils';
 
 type SeraMode = 'closed' | 'chat';
@@ -16,15 +16,21 @@ export function SeraFAB() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { messages, isLoading, sendMessage, executeAction, clearMessages } = useSeraAssistant();
 
-  // Voice input with auto-stop
+  // Enhanced voice input with status tracking
   const { 
+    status: voiceStatus,
     isListening, 
     isSupported: voiceSupported,
     interimTranscript,
+    audioLevel,
+    permissionStatus,
+    errorType,
     startListening,
-    stopListening
+    stopListening,
+    resetState
   } = useVoiceInput({
     autoStopOnSilence: true,
+    silenceTimeout: 2500,
     onTranscript: (text) => {
       if (text.trim()) {
         handleSend(text);
@@ -32,6 +38,12 @@ export function SeraFAB() {
     },
     onInterimTranscript: (text) => {
       setInput(text);
+    },
+    onStatusChange: (status) => {
+      console.log('Voice status:', status);
+    },
+    onError: (error, message) => {
+      console.error('Voice error:', error, message);
     },
   });
 
@@ -95,12 +107,13 @@ export function SeraFAB() {
     }
   };
 
-  const handleVoiceToggle = () => {
+  const handleVoiceToggle = async () => {
     if (isListening) {
       stopListening();
     } else {
       setInput('');
-      startListening();
+      resetState();
+      await startListening();
     }
   };
 
@@ -114,6 +127,29 @@ export function SeraFAB() {
 
   const handleExecuteAction = async (intent: string, data: Record<string, any>) => {
     await executeAction(intent, data);
+  };
+
+  const getVoiceStatusMessage = (status: VoiceInputStatus): string => {
+    switch (status) {
+      case 'requesting_permission': return 'Requesting microphone access...';
+      case 'listening': return interimTranscript || 'Speak now...';
+      case 'processing': return 'Processing...';
+      case 'error': return 'Voice input error';
+      default: return 'Smart Assistant';
+    }
+  };
+
+  const getVoiceErrorMessage = (): string | null => {
+    if (errorType === 'permission_denied') {
+      return 'Microphone access denied. Click to retry.';
+    }
+    if (errorType === 'no_speech') {
+      return 'No speech detected. Try again.';
+    }
+    if (errorType === 'not_supported') {
+      return 'Voice not supported in this browser.';
+    }
+    return null;
   };
 
   return (
@@ -136,9 +172,17 @@ export function SeraFAB() {
                 <div>
                   <h3 className="font-semibold text-foreground">SERA</h3>
                   <p className="text-xs text-muted-foreground">
-                    {isListening ? (
+                    {voiceStatus === 'listening' ? (
                       <span className="text-primary flex items-center gap-1">
                         <Volume2 className="w-3 h-3 animate-pulse" /> Listening...
+                      </span>
+                    ) : voiceStatus === 'requesting_permission' ? (
+                      <span className="text-yellow-500 flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Requesting mic...
+                      </span>
+                    ) : voiceStatus === 'error' ? (
+                      <span className="text-destructive flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" /> Error
                       </span>
                     ) : isLoading ? (
                       'Processing...'
@@ -254,9 +298,9 @@ export function SeraFAB() {
               </div>
             </ScrollArea>
 
-            {/* Voice indicator */}
+            {/* Voice indicator with waveform */}
             <AnimatePresence>
-              {isListening && (
+              {(voiceStatus === 'listening' || voiceStatus === 'requesting_permission') && (
                 <motion.div
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
@@ -264,25 +308,59 @@ export function SeraFAB() {
                   className="px-4 py-3 bg-primary/10 border-t border-primary/20"
                 >
                   <div className="flex items-center justify-center gap-3">
-                    <div className="flex gap-1">
-                      {[...Array(5)].map((_, i) => (
+                    {/* Animated waveform based on audio level */}
+                    <div className="flex gap-1 items-center h-8">
+                      {[...Array(7)].map((_, i) => (
                         <motion.div
                           key={i}
                           className="w-1 bg-primary rounded-full"
                           animate={{
-                            height: [8, 24, 8],
+                            height: voiceStatus === 'listening' 
+                              ? [8, Math.max(8, Math.min(32, audioLevel * 0.4 + Math.random() * 8)), 8]
+                              : 8,
                           }}
                           transition={{
-                            duration: 0.5,
+                            duration: 0.15,
                             repeat: Infinity,
-                            delay: i * 0.1,
+                            delay: i * 0.05,
                           }}
                         />
                       ))}
                     </div>
                     <span className="text-sm text-primary font-medium">
-                      {interimTranscript || 'Speak now...'}
+                      {getVoiceStatusMessage(voiceStatus)}
                     </span>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Error message */}
+            <AnimatePresence>
+              {voiceStatus === 'error' && errorType && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="px-4 py-3 bg-destructive/10 border-t border-destructive/20"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-destructive flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      {getVoiceErrorMessage()}
+                    </span>
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      className="h-6 text-xs"
+                      onClick={() => {
+                        resetState();
+                        startListening();
+                      }}
+                    >
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                      Retry
+                    </Button>
                   </div>
                 </motion.div>
               )}
@@ -297,16 +375,27 @@ export function SeraFAB() {
                     size="icon"
                     variant={isListening ? 'default' : 'outline'}
                     onClick={handleVoiceToggle}
-                    disabled={isLoading}
+                    disabled={isLoading || voiceStatus === 'requesting_permission'}
                     className={cn(
-                      'flex-shrink-0 h-10 w-10 transition-all',
-                      isListening && 'bg-red-500 hover:bg-red-600 border-red-500 animate-pulse'
+                      'flex-shrink-0 h-10 w-10 transition-all relative overflow-hidden',
+                      isListening && 'bg-red-500 hover:bg-red-600 border-red-500'
                     )}
                   >
-                    {isListening ? (
+                    {voiceStatus === 'requesting_permission' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : isListening ? (
                       <MicOff className="w-4 h-4" />
                     ) : (
                       <Mic className="w-4 h-4" />
+                    )}
+                    
+                    {/* Pulse ring when listening */}
+                    {isListening && (
+                      <motion.span
+                        className="absolute inset-0 rounded-lg border-2 border-red-400"
+                        animate={{ scale: [1, 1.3, 1], opacity: [0.8, 0, 0.8] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                      />
                     )}
                   </Button>
                 )}
