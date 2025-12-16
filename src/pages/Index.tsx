@@ -31,26 +31,33 @@ const Index = () => {
     <div className="min-h-screen w-full relative">
       <FloatingBackground />
       <Header />
+      
+      {/* Main content with transparent glass effect to show floating background */}
       <main className="pt-32 sm:pt-28 pb-24 sm:pb-16 px-4 sm:px-8 min-h-screen relative z-10">
-        <div className="max-w-7xl mx-auto space-y-8">
-          <div className="animate-fade-in glass p-6 rounded-3xl">
+        <div className="max-w-7xl mx-auto space-y-6">
+          {/* Greeting Card - more transparent */}
+          <div className="animate-fade-in glass p-6 rounded-3xl bg-background/60 backdrop-blur-md">
             <h1 className="text-2xl sm:text-3xl font-light mb-2">{getGreeting()}</h1>
             <p className="text-muted-foreground text-sm sm:text-base">
               Here's your productivity overview. Use the SERA button below to quickly capture tasks.
             </p>
           </div>
 
-          {/* Main Grid */}
+          {/* Main Grid - Timeline full width, then AI Planner below */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left Column - Timeline */}
+            {/* Left Column - Timeline and AI Planner (2/3 width) */}
             <div className="lg:col-span-2 space-y-6">
               <TimelineWidget />
+              
+              {/* AI Planner Card - positioned left-aligned below Timeline */}
+              <div className="max-w-md">
+                <SeraPlannerCard />
+              </div>
             </div>
 
-            {/* Right Column - GTD Widgets */}
+            {/* Right Column - Focus, GTD Widgets (1/3 width) */}
             <div className="space-y-6">
               <FocusModeCard />
-              <SeraPlannerCard />
               <GTDWidget />
               <GTDAnalytics />
             </div>
