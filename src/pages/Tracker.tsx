@@ -53,7 +53,7 @@ const getDaysInMonth = (year: number, month: number) => {
 
 const formatDate = (date: Date) => date.toISOString().split('T')[0];
 
-const Traker = () => {
+const Tracker = () => {
   const [habits, setHabits] = useState<Habit[]>(mockHabits);
   const [logs, setLogs] = useState<HabitLog[]>(mockLogs);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -131,4 +131,4 @@ const Traker = () => {
   );
 };
 
-export default Traker;
+export default Tracker;

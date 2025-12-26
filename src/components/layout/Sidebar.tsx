@@ -9,7 +9,7 @@ const navItems = [
   { icon: FileText, label: "Notes", path: "/notes" },
   { icon: Zap, label: "Automations", path: "/automations" },
   { icon: BarChart3, label: "Analytics", path: "/analytics" },
-  { icon: Target, label: "Traker", path: "/traker" },
+  { icon: Target, label: "Tracker", path: "/tracker" },
 ];
 
 export const Sidebar = () => {
