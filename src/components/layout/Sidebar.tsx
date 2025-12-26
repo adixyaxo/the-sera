@@ -1,4 +1,4 @@
-import { LayoutDashboard, Calendar, CheckSquare, FileText, Zap, BarChart3 } from "lucide-react";
+import { LayoutDashboard, Calendar, CheckSquare, FileText, Zap, BarChart3, Target } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
@@ -9,6 +9,7 @@ const navItems = [
   { icon: FileText, label: "Notes", path: "/notes" },
   { icon: Zap, label: "Automations", path: "/automations" },
   { icon: BarChart3, label: "Analytics", path: "/analytics" },
+  { icon: Target, label: "Traker", path: "/traker" },
 ];
 
 export const Sidebar = () => {
