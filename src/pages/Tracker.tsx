@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -14,13 +14,18 @@ import {
   CalendarDays
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
-// --- SERA LAYOUT IMPORTS ---
+// --- SUPABASE & AUTH IMPORTS ---
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+
+// --- LAYOUT IMPORTS ---
 import { Header } from "@/components/layout/Header";
 import { FloatingBackground } from "@/components/dashboard/FloatingBackground";
 import { SeraFAB } from "@/components/sera/SeraFAB";
 
-// --- TYPES & LOGIC (Same as before) ---
+// --- TYPES ---
 type Frequency = "daily" | "weekly";
 type ViewMode = "daily" | "weekly" | "monthly";
 
@@ -39,19 +44,7 @@ type HabitLog = {
   completed: boolean;
 };
 
-const mockHabits: Habit[] = [
-  { id: "h1", name: "Read 30 mins", category: "Personal Growth", frequency: "daily", startDate: new Date("2024-07-01"), archived: false },
-  { id: "h2", name: "Deep Work (4h)", category: "Productivity", frequency: "daily", startDate: new Date("2024-07-01"), archived: false },
-  { id: "h3", name: "Gym / Cardio", category: "Health", frequency: "daily", startDate: new Date("2024-07-05"), archived: false },
-  { id: "h4", name: "Weekly Review", category: "Productivity", frequency: "weekly", startDate: new Date("2024-07-01"), archived: false },
-];
-
-const mockLogs: HabitLog[] = [
-  { habitId: "h1", dateString: "2024-07-20", completed: true },
-  { habitId: "h1", dateString: "2024-07-21", completed: true },
-  { habitId: "h1", dateString: "2024-07-22", completed: true },
-];
-
+// --- HELPERS ---
 const formatDateKey = (date: Date) => date.toISOString().split('T')[0];
 
 const getDatesForView = (view: ViewMode, currentDate: Date): Date[] => {
@@ -80,39 +73,166 @@ const getDatesForView = (view: ViewMode, currentDate: Date): Date[] => {
   return dates;
 };
 
-const useHabitLogic = (initialHabits: Habit[], initialLogs: HabitLog[]) => {
-  const [habits, setHabits] = useState<Habit[]>(initialHabits);
-  const [logs, setLogs] = useState<HabitLog[]>(initialLogs);
+// --- LOGIC HOOK WITH SUPABASE ---
+const useHabitLogic = () => {
+  const { user } = useAuth();
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [logs, setLogs] = useState<HabitLog[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const toggleHabit = useCallback((habitId: string, date: Date) => {
+  // 1. Fetch Data
+  const loadData = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      // Fetch Habits
+      const { data: habitsData, error: habitsError } = await supabase
+        .from('habits')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('archived', false) // Only active habits
+        .order('created_at', { ascending: true });
+
+      if (habitsError) throw habitsError;
+
+      // Fetch Logs (All logs for these habits)
+      // Note: In a real large app, you might only fetch logs for the current month
+      const { data: logsData, error: logsError } = await supabase
+        .from('habit_logs')
+        .select('*')
+        .in('habit_id', habitsData.map(h => h.id));
+
+      if (logsError) throw logsError;
+
+      // Transform to local types
+      const loadedHabits: Habit[] = habitsData.map(h => ({
+        id: h.id,
+        name: h.name,
+        category: h.category,
+        frequency: h.frequency as Frequency,
+        startDate: new Date(h.start_date),
+        archived: h.archived
+      }));
+
+      const loadedLogs: HabitLog[] = logsData.map(l => ({
+        habitId: l.habit_id,
+        dateString: l.date_string,
+        completed: l.completed
+      }));
+
+      setHabits(loadedHabits);
+      setLogs(loadedLogs);
+    } catch (error) {
+      console.error("Error loading habits:", error);
+      toast.error("Failed to load habits");
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  // Initial Load
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // 2. Toggle Habit (Optimistic UI + DB Update)
+  const toggleHabit = async (habitId: string, date: Date) => {
     const dateStr = formatDateKey(date);
+
+    // Optimistic Update
+    const isCurrentlyCompleted = logs.some(l => l.habitId === habitId && l.dateString === dateStr && l.completed);
+
+    // Update local state immediately
     setLogs(prev => {
-      const existingIndex = prev.findIndex(l => l.habitId === habitId && l.dateString === dateStr);
-      if (existingIndex > -1) {
-        const newLogs = [...prev];
-        newLogs[existingIndex] = { ...newLogs[existingIndex], completed: !newLogs[existingIndex].completed };
-        return newLogs;
+      if (isCurrentlyCompleted) {
+        // Remove log if unchecking
+        return prev.filter(l => !(l.habitId === habitId && l.dateString === dateStr));
+      } else {
+        // Add log if checking
+        return [...prev, { habitId, dateString: dateStr, completed: true }];
       }
-      return [...prev, { habitId, dateString: dateStr, completed: true }];
     });
-  }, []);
 
-  const addHabit = (name: string) => {
-    const newHabit: Habit = {
-      id: `h${Date.now()}`,
-      name,
-      category: "General",
-      frequency: "daily",
-      startDate: new Date(),
-      archived: false
-    };
-    setHabits([...habits, newHabit]);
+    try {
+      if (isCurrentlyCompleted) {
+        // Delete from DB
+        const { error } = await supabase
+          .from('habit_logs')
+          .delete()
+          .eq('habit_id', habitId)
+          .eq('date_string', dateStr);
+        if (error) throw error;
+      } else {
+        // Insert into DB
+        const { error } = await supabase
+          .from('habit_logs')
+          .insert({
+            habit_id: habitId,
+            date_string: dateStr,
+            completed: true
+          });
+        if (error) throw error;
+      }
+    } catch (error) {
+      console.error("Error toggling habit:", error);
+      toast.error("Failed to save progress");
+      loadData(); // Revert on error
+    }
   };
 
-  const deleteHabit = (id: string) => {
-    setHabits(habits.filter(h => h.id !== id));
+  // 3. Add Habit
+  const addHabit = async (name: string) => {
+    if (!user) return;
+    try {
+      const { data, error } = await supabase
+        .from('habits')
+        .insert({
+          user_id: user.id,
+          name: name,
+          category: 'General',
+          frequency: 'daily',
+          start_date: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setHabits(prev => [...prev, {
+        id: data.id,
+        name: data.name,
+        category: data.category,
+        frequency: data.frequency as Frequency,
+        startDate: new Date(data.start_date),
+        archived: data.archived
+      }]);
+      toast.success("Habit created");
+    } catch (error) {
+      console.error("Error adding habit:", error);
+      toast.error("Failed to create habit");
+    }
   };
 
+  // 4. Delete Habit
+  const deleteHabit = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('habits')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setHabits(prev => prev.filter(h => h.id !== id));
+      setLogs(prev => prev.filter(l => l.habitId !== id)); // Cleanup logs locally
+      toast.success("Habit deleted");
+    } catch (error) {
+      console.error("Error deleting habit:", error);
+      toast.error("Failed to delete habit");
+    }
+  };
+
+  // 5. Calculate Stats (Same logic, just runs on loaded data)
   const calculateStats = (habitId: string) => {
     const habitLogs = logs
       .filter(l => l.habitId === habitId && l.completed)
@@ -146,10 +266,10 @@ const useHabitLogic = (initialHabits: Habit[], initialLogs: HabitLog[]) => {
     return { currentStreak, longestStreak, totalCompleted };
   };
 
-  return { habits, logs, toggleHabit, addHabit, deleteHabit, calculateStats };
+  return { habits, logs, loading, toggleHabit, addHabit, deleteHabit, calculateStats };
 };
 
-// --- SUB-COMPONENT: HABIT ROW ---
+// --- SUB-COMPONENT: HABIT ROW (Same as before) ---
 const HabitRow = React.memo(({
   habit,
   dates,
@@ -167,7 +287,6 @@ const HabitRow = React.memo(({
 }) => {
   return (
     <tr className="group hover:bg-muted/30 transition-colors border-b border-white/5 dark:border-white/5">
-      {/* Sticky Left Column: Glass effect applied here for overlap legibility */}
       <td className="sticky left-0 z-20 bg-background/80 backdrop-blur-md border-r border-border/40 p-0 min-w-[280px]">
         <div className="flex flex-col p-4 h-full justify-center">
           <div className="flex justify-between items-center mb-1">
@@ -195,7 +314,6 @@ const HabitRow = React.memo(({
         </div>
       </td>
 
-      {/* Date Columns */}
       {dates.map(date => {
         const dateKey = formatDateKey(date);
         const isCompleted = logs.some(l => l.habitId === habit.id && l.dateString === dateKey && l.completed);
@@ -232,7 +350,9 @@ const Tracker = () => {
   const [viewMode, setViewMode] = useState<ViewMode>("monthly");
   const [newHabitName, setNewHabitName] = useState("");
 
-  const { habits, logs, toggleHabit, addHabit, deleteHabit, calculateStats } = useHabitLogic(mockHabits, mockLogs);
+  // Use the new Supabase-connected hook
+  const { habits, logs, loading, toggleHabit, addHabit, deleteHabit, calculateStats } = useHabitLogic();
+
   const datesInView = useMemo(() => getDatesForView(viewMode, currentDate), [viewMode, currentDate]);
 
   const handleMonthChange = (offset: number) => {
@@ -255,11 +375,9 @@ const Tracker = () => {
       <FloatingBackground />
       <Header />
 
-      {/* Main Container - Matches Index.tsx padding/z-index */}
       <main className="pt-32 sm:pt-28 pb-24 sm:pb-16 px-4 sm:px-8 min-h-screen relative z-10">
         <div className="max-w-7xl mx-auto space-y-6">
 
-          {/* Header Section with Glass Effect */}
           <div className="glass p-6 rounded-3xl bg-background/60 backdrop-blur-md flex flex-col md:flex-row justify-between items-center gap-4 animate-fade-in">
             <div>
               <h1 className="text-2xl sm:text-3xl font-light mb-1">Habit Tracker</h1>
@@ -281,10 +399,8 @@ const Tracker = () => {
             </form>
           </div>
 
-          {/* Main Tracker Card - Glassmorphism applied */}
           <div className="glass rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-background/40 backdrop-blur-md animate-fade-in delay-75">
 
-            {/* Controls Bar */}
             <div className="p-4 border-b border-border/10 flex flex-col sm:flex-row items-center justify-between gap-4 bg-background/20">
               <div className="flex items-center gap-2 bg-background/40 p-1 rounded-xl border border-border/10">
                 <Button size="icon" variant="ghost" onClick={() => handleMonthChange(-1)} className="h-8 w-8 hover:bg-background/60 rounded-lg">
@@ -312,73 +428,75 @@ const Tracker = () => {
               </Tabs>
             </div>
 
-            {/* Table Area */}
             <div className="relative overflow-x-auto min-h-[400px]">
-              <table className="w-full border-collapse min-w-[800px]">
-                <thead className="z-30 sticky top-0">
-                  <tr>
-                    {/* Sticky Corner - Solid background required to cover scrolling content */}
-                    <th className="sticky left-0 z-40 bg-background/90 backdrop-blur-xl p-4 border-r border-border/40 text-left min-w-[280px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <CalendarDays className="h-4 w-4" />
-                        <span className="text-sm font-normal">Habits</span>
-                      </div>
-                    </th>
-                    {/* Date Headers */}
-                    {datesInView.map(day => {
-                      const isToday = formatDateKey(day) === formatDateKey(new Date());
-                      return (
-                        <th key={day.toISOString()} className={cn(
-                          "p-2 border-r border-border/10 text-center min-w-[50px] bg-background/60 backdrop-blur-md",
-                          isToday ? "bg-primary/5 text-primary" : "text-muted-foreground"
-                        )}>
-                          <div className="flex flex-col items-center">
-                            <span className="text-[10px] uppercase font-medium opacity-70">
-                              {day.toLocaleDateString('en-US', { weekday: 'short' }).charAt(0)}
-                            </span>
-                            <span className={cn("text-sm font-light mt-1", isToday ? "font-bold" : "")}>
-                              {day.getDate()}
-                            </span>
-                          </div>
-                        </th>
-                      )
-                    })}
-                  </tr>
-                </thead>
-
-                <tbody className="bg-transparent">
-                  {habits.filter(h => !h.archived).map(habit => (
-                    <HabitRow
-                      key={habit.id}
-                      habit={habit}
-                      dates={datesInView}
-                      logs={logs}
-                      onToggle={toggleHabit}
-                      onDelete={deleteHabit}
-                      stats={calculateStats(habit.id)}
-                    />
-                  ))}
-
-                  {habits.length === 0 && (
+              {loading ? (
+                <div className="flex items-center justify-center h-[400px] text-muted-foreground animate-pulse">
+                  Loading habits...
+                </div>
+              ) : (
+                <table className="w-full border-collapse min-w-[800px]">
+                  <thead className="z-30 sticky top-0">
                     <tr>
-                      <td colSpan={datesInView.length + 1} className="p-12 text-center text-muted-foreground/50">
-                        <div className="flex flex-col items-center gap-2">
-                          <div className="h-12 w-12 rounded-full bg-muted/20 flex items-center justify-center">
-                            <PlusCircle className="h-6 w-6 opacity-50" />
-                          </div>
-                          <p>No habits active. Start by adding one above.</p>
+                      <th className="sticky left-0 z-40 bg-background/90 backdrop-blur-xl p-4 border-r border-border/40 text-left min-w-[280px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <CalendarDays className="h-4 w-4" />
+                          <span className="text-sm font-normal">Habits</span>
                         </div>
-                      </td>
+                      </th>
+                      {datesInView.map(day => {
+                        const isToday = formatDateKey(day) === formatDateKey(new Date());
+                        return (
+                          <th key={day.toISOString()} className={cn(
+                            "p-2 border-r border-border/10 text-center min-w-[50px] bg-background/60 backdrop-blur-md",
+                            isToday ? "bg-primary/5 text-primary" : "text-muted-foreground"
+                          )}>
+                            <div className="flex flex-col items-center">
+                              <span className="text-[10px] uppercase font-medium opacity-70">
+                                {day.toLocaleDateString('en-US', { weekday: 'short' }).charAt(0)}
+                              </span>
+                              <span className={cn("text-sm font-light mt-1", isToday ? "font-bold" : "")}>
+                                {day.getDate()}
+                              </span>
+                            </div>
+                          </th>
+                        )
+                      })}
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+
+                  <tbody className="bg-transparent">
+                    {habits.filter(h => !h.archived).map(habit => (
+                      <HabitRow
+                        key={habit.id}
+                        habit={habit}
+                        dates={datesInView}
+                        logs={logs}
+                        onToggle={toggleHabit}
+                        onDelete={deleteHabit}
+                        stats={calculateStats(habit.id)}
+                      />
+                    ))}
+
+                    {habits.length === 0 && (
+                      <tr>
+                        <td colSpan={datesInView.length + 1} className="p-12 text-center text-muted-foreground/50">
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="h-12 w-12 rounded-full bg-muted/20 flex items-center justify-center">
+                              <PlusCircle className="h-6 w-6 opacity-50" />
+                            </div>
+                            <p>No habits active. Start by adding one above.</p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>
       </main>
 
-      {/* Global Components */}
       <SeraFAB />
       <div className="fixed bottom-2 left-2 text-[0.5rem] text-muted-foreground/50 select-none z-50">
         made by aditya
