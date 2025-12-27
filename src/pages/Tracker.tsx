@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import {
@@ -9,15 +8,21 @@ import {
   ChevronLeft,
   ChevronRight,
   Trash2,
-  Archive,
   Flame,
   Trophy,
-  Activity
+  Activity,
+  CalendarDays
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// --- TYPES ---
+// --- SERA LAYOUT IMPORTS ---
+import { Header } from "@/components/layout/Header";
+import { FloatingBackground } from "@/components/dashboard/FloatingBackground";
+import { SeraFAB } from "@/components/sera/SeraFAB";
+
+// --- TYPES & LOGIC (Same as before) ---
 type Frequency = "daily" | "weekly";
+type ViewMode = "daily" | "weekly" | "monthly";
 
 type Habit = {
   id: string;
@@ -30,13 +35,10 @@ type Habit = {
 
 type HabitLog = {
   habitId: string;
-  dateString: string; // YYYY-MM-DD
+  dateString: string;
   completed: boolean;
 };
 
-type ViewMode = "daily" | "weekly" | "monthly";
-
-// --- MOCK DATA ---
 const mockHabits: Habit[] = [
   { id: "h1", name: "Read 30 mins", category: "Personal Growth", frequency: "daily", startDate: new Date("2024-07-01"), archived: false },
   { id: "h2", name: "Deep Work (4h)", category: "Productivity", frequency: "daily", startDate: new Date("2024-07-01"), archived: false },
@@ -47,10 +49,9 @@ const mockHabits: Habit[] = [
 const mockLogs: HabitLog[] = [
   { habitId: "h1", dateString: "2024-07-20", completed: true },
   { habitId: "h1", dateString: "2024-07-21", completed: true },
-  { habitId: "h1", dateString: "2024-07-22", completed: true }, // 3 day streak
+  { habitId: "h1", dateString: "2024-07-22", completed: true },
 ];
 
-// --- HELPERS ---
 const formatDateKey = (date: Date) => date.toISOString().split('T')[0];
 
 const getDatesForView = (view: ViewMode, currentDate: Date): Date[] => {
@@ -60,21 +61,16 @@ const getDatesForView = (view: ViewMode, currentDate: Date): Date[] => {
 
   if (view === "daily") {
     dates.push(new Date(currentDate));
-  }
-  else if (view === "weekly") {
-    // Start from Sunday of the current week
-    const dayOfWeek = currentDate.getDay(); // 0 (Sun) - 6 (Sat)
+  } else if (view === "weekly") {
+    const dayOfWeek = currentDate.getDay();
     const startOfWeek = new Date(currentDate);
     startOfWeek.setDate(currentDate.getDate() - dayOfWeek);
-
     for (let i = 0; i < 7; i++) {
       const d = new Date(startOfWeek);
       d.setDate(startOfWeek.getDate() + i);
       dates.push(d);
     }
-  }
-  else {
-    // Monthly view
+  } else {
     const date = new Date(year, month, 1);
     while (date.getMonth() === month) {
       dates.push(new Date(date));
@@ -84,8 +80,6 @@ const getDatesForView = (view: ViewMode, currentDate: Date): Date[] => {
   return dates;
 };
 
-// --- LOGIC HOOK ---
-// Separating logic from UI for cleanliness
 const useHabitLogic = (initialHabits: Habit[], initialLogs: HabitLog[]) => {
   const [habits, setHabits] = useState<Habit[]>(initialHabits);
   const [logs, setLogs] = useState<HabitLog[]>(initialLogs);
@@ -96,7 +90,6 @@ const useHabitLogic = (initialHabits: Habit[], initialLogs: HabitLog[]) => {
       const existingIndex = prev.findIndex(l => l.habitId === habitId && l.dateString === dateStr);
       if (existingIndex > -1) {
         const newLogs = [...prev];
-        // Toggle or remove? Let's toggle.
         newLogs[existingIndex] = { ...newLogs[existingIndex], completed: !newLogs[existingIndex].completed };
         return newLogs;
       }
@@ -121,7 +114,6 @@ const useHabitLogic = (initialHabits: Habit[], initialLogs: HabitLog[]) => {
   };
 
   const calculateStats = (habitId: string) => {
-    // Filter logs for this habit and sort by date ascending
     const habitLogs = logs
       .filter(l => l.habitId === habitId && l.completed)
       .sort((a, b) => new Date(a.dateString).getTime() - new Date(b.dateString).getTime());
@@ -130,46 +122,34 @@ const useHabitLogic = (initialHabits: Habit[], initialLogs: HabitLog[]) => {
     let longestStreak = 0;
     let totalCompleted = habitLogs.length;
 
-    // Simple streak calculation (Assumes daily frequency for simplicity)
-    // For production, you'd check gaps based on frequency
     if (habitLogs.length > 0) {
       let tempStreak = 1;
       const todayStr = formatDateKey(new Date());
       const yesterdayStr = formatDateKey(new Date(new Date().setDate(new Date().getDate() - 1)));
-
-      // Check if active today or yesterday to maintain current streak
       const lastLog = habitLogs[habitLogs.length - 1];
       const isActive = lastLog.dateString === todayStr || lastLog.dateString === yesterdayStr;
 
-      // Calculate Longest
       for (let i = 1; i < habitLogs.length; i++) {
         const prev = new Date(habitLogs[i - 1].dateString);
         const curr = new Date(habitLogs[i].dateString);
         const diffTime = Math.abs(curr.getTime() - prev.getTime());
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        if (diffDays === 1) {
-          tempStreak++;
-        } else {
+        if (diffDays === 1) tempStreak++;
+        else {
           longestStreak = Math.max(longestStreak, tempStreak);
           tempStreak = 1;
         }
       }
       longestStreak = Math.max(longestStreak, tempStreak);
-
-      // If the last log was today or yesterday, the tempStreak is the current streak
-      // This is a simplified check
       currentStreak = isActive ? tempStreak : 0;
     }
-
     return { currentStreak, longestStreak, totalCompleted };
   };
 
   return { habits, logs, toggleHabit, addHabit, deleteHabit, calculateStats };
 };
 
-// --- SUB-COMPONENT: HABIT ROW (MEMOIZED FOR PERFORMANCE) ---
-// This prevents the entire table from re-rendering when one checkbox is clicked
+// --- SUB-COMPONENT: HABIT ROW ---
 const HabitRow = React.memo(({
   habit,
   dates,
@@ -186,21 +166,23 @@ const HabitRow = React.memo(({
   stats: { currentStreak: number, longestStreak: number, totalCompleted: number }
 }) => {
   return (
-    <tr className="group hover:bg-muted/30 transition-colors border-b border-border/50">
-      {/* Sticky Left Column: Info & Stats */}
-      <td className="sticky left-0 z-20 bg-background/95 backdrop-blur border-r border-border p-0 min-w-[280px]">
-        <div className="flex flex-col p-3 h-full justify-center">
+    <tr className="group hover:bg-muted/30 transition-colors border-b border-white/5 dark:border-white/5">
+      {/* Sticky Left Column: Glass effect applied here for overlap legibility */}
+      <td className="sticky left-0 z-20 bg-background/80 backdrop-blur-md border-r border-border/40 p-0 min-w-[280px]">
+        <div className="flex flex-col p-4 h-full justify-center">
           <div className="flex justify-between items-center mb-1">
-            <span className="font-semibold text-sm truncate max-w-[150px]" title={habit.name}>{habit.name}</span>
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-              {/* <Button variant="ghost" size="icon" className="h-6 w-6"><Archive className="h-3 w-3" /></Button> */}
-              <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => onDelete(habit.id)}>
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            </div>
+            <span className="font-medium text-sm truncate max-w-[180px] text-foreground/90" title={habit.name}>{habit.name}</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive hover:bg-destructive/10"
+              onClick={() => onDelete(habit.id)}
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
           </div>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1 text-orange-500 font-medium">
+          <div className="flex items-center gap-3 text-xs text-muted-foreground/80">
+            <span className="flex items-center gap-1 text-orange-400/90 font-medium">
               <Flame className="h-3 w-3" /> {stats.currentStreak}
             </span>
             <span className="flex items-center gap-1">
@@ -221,14 +203,16 @@ const HabitRow = React.memo(({
 
         return (
           <td key={dateKey} className={cn(
-            "p-0 text-center border-r border-border/30 min-w-[40px]",
-            isToday ? "bg-accent/10" : ""
+            "p-0 text-center border-r border-border/10 min-w-[50px]",
+            isToday ? "bg-primary/5" : ""
           )}>
             <div className="flex items-center justify-center h-16 w-full">
               <Checkbox
                 className={cn(
-                  "h-5 w-5 transition-all duration-200",
-                  isCompleted ? "data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground" : "opacity-30 hover:opacity-100"
+                  "h-5 w-5 transition-all duration-300 rounded-md border-2",
+                  isCompleted
+                    ? "border-primary bg-primary text-primary-foreground shadow-[0_0_10px_rgba(var(--primary),0.3)]"
+                    : "border-muted-foreground/30 hover:border-primary/50"
                 )}
                 checked={isCompleted}
                 onCheckedChange={() => onToggle(habit.id, date)}
@@ -240,29 +224,22 @@ const HabitRow = React.memo(({
     </tr>
   );
 });
-
 HabitRow.displayName = "HabitRow";
 
-// --- MAIN COMPONENT ---
+// --- MAIN PAGE ---
 const Tracker = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>("monthly");
   const [newHabitName, setNewHabitName] = useState("");
 
   const { habits, logs, toggleHabit, addHabit, deleteHabit, calculateStats } = useHabitLogic(mockHabits, mockLogs);
-
-  // Memoize the dates to render to avoid recalculating on every toggle
   const datesInView = useMemo(() => getDatesForView(viewMode, currentDate), [viewMode, currentDate]);
 
   const handleMonthChange = (offset: number) => {
     const newDate = new Date(currentDate);
-    if (viewMode === "weekly") {
-      newDate.setDate(newDate.getDate() + (offset * 7));
-    } else if (viewMode === "daily") {
-      newDate.setDate(newDate.getDate() + offset);
-    } else {
-      newDate.setMonth(newDate.getMonth() + offset);
-    }
+    if (viewMode === "weekly") newDate.setDate(newDate.getDate() + (offset * 7));
+    else if (viewMode === "daily") newDate.setDate(newDate.getDate() + offset);
+    else newDate.setMonth(newDate.getMonth() + offset);
     setCurrentDate(newDate);
   };
 
@@ -274,71 +251,92 @@ const Tracker = () => {
   };
 
   return (
-    <div className="h-full w-full flex flex-col space-y-4">
-      <Card className="flex-1 border-border shadow-sm overflow-hidden flex flex-col">
-        {/* HEADER CONTROLS */}
-        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2 border-b">
-          <div className="flex items-center gap-2">
-            <Button size="icon" variant="ghost" onClick={() => handleMonthChange(-1)}><ChevronLeft className="h-4 w-4" /></Button>
-            <CardTitle className="text-xl font-bold w-32 text-center">
-              {viewMode === "monthly"
-                ? currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })
-                : viewMode === "weekly"
-                  ? "Week of " + currentDate.getDate()
-                  : currentDate.toLocaleDateString()
-              }
-            </CardTitle>
-            <Button size="icon" variant="ghost" onClick={() => handleMonthChange(1)}><ChevronRight className="h-4 w-4" /></Button>
-          </div>
+    <div className="min-h-screen w-full relative">
+      <FloatingBackground />
+      <Header />
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <form onSubmit={handleAddHabit} className="flex gap-2 w-full">
-              <Input
-                placeholder="New habit..."
-                value={newHabitName}
-                onChange={(e) => setNewHabitName(e.target.value)}
-                className="h-9"
-              />
-              <Button type="submit" size="sm" variant="default">
+      {/* Main Container - Matches Index.tsx padding/z-index */}
+      <main className="pt-32 sm:pt-28 pb-24 sm:pb-16 px-4 sm:px-8 min-h-screen relative z-10">
+        <div className="max-w-7xl mx-auto space-y-6">
+
+          {/* Header Section with Glass Effect */}
+          <div className="glass p-6 rounded-3xl bg-background/60 backdrop-blur-md flex flex-col md:flex-row justify-between items-center gap-4 animate-fade-in">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-light mb-1">Habit Tracker</h1>
+              <p className="text-muted-foreground text-sm">Consistent actions create consistent results.</p>
+            </div>
+
+            <form onSubmit={handleAddHabit} className="flex gap-2 w-full md:w-auto">
+              <div className="relative">
+                <Input
+                  placeholder="New habit..."
+                  value={newHabitName}
+                  onChange={(e) => setNewHabitName(e.target.value)}
+                  className="h-10 w-full md:w-64 bg-background/50 border-border/40 focus:bg-background/80 transition-all rounded-xl pl-3"
+                />
+              </div>
+              <Button type="submit" size="default" className="rounded-xl px-4 shadow-lg shadow-primary/20">
                 <PlusCircle className="mr-2 h-4 w-4" /> Add
               </Button>
             </form>
           </div>
-        </CardHeader>
 
-        <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
-          <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)} className="w-full flex-1 flex flex-col">
-            <div className="px-4 py-2 bg-muted/20 border-b flex justify-between items-center">
-              <TabsList className="grid w-[300px] grid-cols-3 h-8">
-                <TabsTrigger value="daily" className="text-xs">Daily</TabsTrigger>
-                <TabsTrigger value="weekly" className="text-xs">Weekly</TabsTrigger>
-                <TabsTrigger value="monthly" className="text-xs">Monthly</TabsTrigger>
-              </TabsList>
-              <div className="text-xs text-muted-foreground hidden md:block">
-                {habits.length} Active Habits
+          {/* Main Tracker Card - Glassmorphism applied */}
+          <div className="glass rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-background/40 backdrop-blur-md animate-fade-in delay-75">
+
+            {/* Controls Bar */}
+            <div className="p-4 border-b border-border/10 flex flex-col sm:flex-row items-center justify-between gap-4 bg-background/20">
+              <div className="flex items-center gap-2 bg-background/40 p-1 rounded-xl border border-border/10">
+                <Button size="icon" variant="ghost" onClick={() => handleMonthChange(-1)} className="h-8 w-8 hover:bg-background/60 rounded-lg">
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm font-medium w-32 text-center select-none">
+                  {viewMode === "monthly"
+                    ? currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })
+                    : viewMode === "weekly"
+                      ? "Week of " + currentDate.getDate()
+                      : currentDate.toLocaleDateString()
+                  }
+                </span>
+                <Button size="icon" variant="ghost" onClick={() => handleMonthChange(1)} className="h-8 w-8 hover:bg-background/60 rounded-lg">
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
               </div>
+
+              <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+                <TabsList className="bg-background/40 border border-border/10 rounded-xl p-1 h-10">
+                  <TabsTrigger value="daily" className="rounded-lg text-xs px-4">Daily</TabsTrigger>
+                  <TabsTrigger value="weekly" className="rounded-lg text-xs px-4">Weekly</TabsTrigger>
+                  <TabsTrigger value="monthly" className="rounded-lg text-xs px-4">Monthly</TabsTrigger>
+                </TabsList>
+              </Tabs>
             </div>
 
-            <TabsContent value={viewMode} className="flex-1 overflow-auto m-0 data-[state=inactive]:hidden relative">
+            {/* Table Area */}
+            <div className="relative overflow-x-auto min-h-[400px]">
               <table className="w-full border-collapse min-w-[800px]">
-                {/* TABLE HEADER */}
-                <thead className="bg-muted/50 z-30 sticky top-0 shadow-sm">
+                <thead className="z-30 sticky top-0">
                   <tr>
-                    <th className="sticky left-0 z-40 bg-muted p-3 border-r border-border text-left min-w-[280px] shadow-[1px_0_0_0_rgba(0,0,0,0.1)]">
-                      <span className="text-sm font-medium">Habit & Stats</span>
+                    {/* Sticky Corner - Solid background required to cover scrolling content */}
+                    <th className="sticky left-0 z-40 bg-background/90 backdrop-blur-xl p-4 border-r border-border/40 text-left min-w-[280px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <CalendarDays className="h-4 w-4" />
+                        <span className="text-sm font-normal">Habits</span>
+                      </div>
                     </th>
+                    {/* Date Headers */}
                     {datesInView.map(day => {
                       const isToday = formatDateKey(day) === formatDateKey(new Date());
                       return (
                         <th key={day.toISOString()} className={cn(
-                          "p-2 border-r border-border/50 text-center min-w-[50px] transition-colors",
-                          isToday ? "bg-primary/10 text-primary" : ""
+                          "p-2 border-r border-border/10 text-center min-w-[50px] bg-background/60 backdrop-blur-md",
+                          isToday ? "bg-primary/5 text-primary" : "text-muted-foreground"
                         )}>
                           <div className="flex flex-col items-center">
-                            <span className="text-[10px] uppercase text-muted-foreground font-semibold">
+                            <span className="text-[10px] uppercase font-medium opacity-70">
                               {day.toLocaleDateString('en-US', { weekday: 'short' }).charAt(0)}
                             </span>
-                            <span className={cn("text-sm font-bold", isToday ? "text-primary" : "")}>
+                            <span className={cn("text-sm font-light mt-1", isToday ? "font-bold" : "")}>
                               {day.getDate()}
                             </span>
                           </div>
@@ -348,8 +346,7 @@ const Tracker = () => {
                   </tr>
                 </thead>
 
-                {/* TABLE BODY */}
-                <tbody className="bg-card">
+                <tbody className="bg-transparent">
                   {habits.filter(h => !h.archived).map(habit => (
                     <HabitRow
                       key={habit.id}
@@ -364,17 +361,28 @@ const Tracker = () => {
 
                   {habits.length === 0 && (
                     <tr>
-                      <td colSpan={datesInView.length + 1} className="p-8 text-center text-muted-foreground">
-                        No habits found. Add one to get started!
+                      <td colSpan={datesInView.length + 1} className="p-12 text-center text-muted-foreground/50">
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="h-12 w-12 rounded-full bg-muted/20 flex items-center justify-center">
+                            <PlusCircle className="h-6 w-6 opacity-50" />
+                          </div>
+                          <p>No habits active. Start by adding one above.</p>
+                        </div>
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* Global Components */}
+      <SeraFAB />
+      <div className="fixed bottom-2 left-2 text-[0.5rem] text-muted-foreground/50 select-none z-50">
+        made by aditya
+      </div>
     </div>
   );
 };
