@@ -54,7 +54,7 @@ const getDatesForView = (view: ViewMode, currentDate: Date): Date[] => {
   } else if (view === "weekly") {
     const dayOfWeek = currentDate.getDay();
     const startOfWeek = new Date(currentDate);
-    // Adjust to start on Sunday (or Monday if preferred)
+    // Adjust to start on Sunday
     startOfWeek.setDate(currentDate.getDate() - dayOfWeek);
     for (let i = 0; i < 7; i++) {
       const d = new Date(startOfWeek);
@@ -76,7 +76,7 @@ const useHabitLogic = () => {
   const { user } = useAuth();
   const [habits, setHabits] = useState<Habit[]>([]);
 
-  // PERFORMANCE: Using a Set for O(1) lookup speed instead of array.find()
+  // PERFORMANCE: Using a Set for O(1) lookup speed
   const [completedSet, setCompletedSet] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
@@ -84,7 +84,8 @@ const useHabitLogic = () => {
     if (!user) return;
     setLoading(true);
     try {
-      const { data: habitsData, error: habitsError } = await supabase
+      // FIX: Cast supabase to 'any' to bypass missing table definition error
+      const { data: habitsData, error: habitsError } = await (supabase as any)
         .from('habits')
         .select('*')
         .eq('user_id', user.id)
@@ -93,14 +94,15 @@ const useHabitLogic = () => {
 
       if (habitsError) throw habitsError;
 
-      const { data: logsData, error: logsError } = await supabase
+      // FIX: Cast supabase to 'any' for logs as well
+      const { data: logsData, error: logsError } = await (supabase as any)
         .from('habit_logs')
         .select('*')
-        .in('habit_id', habitsData.map(h => h.id));
+        .in('habit_id', habitsData.map((h: any) => h.id));
 
       if (logsError) throw logsError;
 
-      const loadedHabits: Habit[] = habitsData.map(h => ({
+      const loadedHabits: Habit[] = habitsData.map((h: any) => ({
         id: h.id,
         name: h.name,
         category: h.category,
@@ -111,7 +113,7 @@ const useHabitLogic = () => {
 
       // Convert array logs to a Set of "habitId|dateString"
       const newSet = new Set<string>();
-      logsData.forEach(l => {
+      logsData.forEach((l: any) => {
         if (l.completed) newSet.add(`${l.habit_id}|${l.date_string}`);
       });
 
@@ -135,7 +137,7 @@ const useHabitLogic = () => {
 
     const isCompleted = completedSet.has(key);
 
-    // Optimistic Update: Update Set immediately
+    // Optimistic Update
     setCompletedSet(prev => {
       const next = new Set(prev);
       if (isCompleted) next.delete(key);
@@ -145,14 +147,19 @@ const useHabitLogic = () => {
 
     try {
       if (isCompleted) {
-        await supabase.from('habit_logs').delete().match({ habit_id: habitId, date_string: dateStr });
+        await (supabase as any)
+          .from('habit_logs')
+          .delete()
+          .match({ habit_id: habitId, date_string: dateStr });
       } else {
-        await supabase.from('habit_logs').insert({ habit_id: habitId, date_string: dateStr, completed: true });
+        await (supabase as any)
+          .from('habit_logs')
+          .insert({ habit_id: habitId, date_string: dateStr, completed: true });
       }
     } catch (error) {
       console.error("Error toggling habit:", error);
       toast.error("Failed to save progress");
-      // Revert on error (could call loadData() or manually revert Set)
+      // Revert on error
       setCompletedSet(prev => {
         const next = new Set(prev);
         if (isCompleted) next.add(key);
@@ -165,14 +172,15 @@ const useHabitLogic = () => {
   const addHabit = async (name: string) => {
     if (!user) return;
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('habits')
         .insert({
           user_id: user.id,
           name: name,
           category: 'General',
           frequency: 'daily',
-          start_date: new Date().toISOString()
+          // FIX: Correct date format for Postgres Date column
+          start_date: new Date().toISOString().split('T')[0]
         })
         .select()
         .single();
@@ -188,14 +196,19 @@ const useHabitLogic = () => {
         archived: data.archived
       }]);
       toast.success("Habit created");
-    } catch (error) {
-      toast.error("Failed to create habit");
+    } catch (error: any) {
+      console.error("Create error:", error);
+      toast.error(error.message || "Failed to create habit");
     }
   };
 
   const deleteHabit = async (id: string) => {
     try {
-      const { error } = await supabase.from('habits').delete().eq('id', id);
+      const { error } = await (supabase as any)
+        .from('habits')
+        .delete()
+        .eq('id', id);
+
       if (error) throw error;
       setHabits(prev => prev.filter(h => h.id !== id));
       toast.success("Habit deleted");
@@ -222,7 +235,7 @@ const HabitRow = React.memo(({
   onDelete: (id: string) => void
 }) => {
 
-  // Calculate stats locally using the fast Set lookup
+  // Memoized stats calculation
   const stats = useMemo(() => {
     const today = new Date();
     const yesterday = new Date();
@@ -233,11 +246,9 @@ const HabitRow = React.memo(({
     let longestStreak = 0;
     let totalCompleted = 0;
 
-    // Check strict current streak (today or yesterday must be active)
     let checkDate = new Date(today);
     let key = generateLogKey(habit.id, checkDate);
 
-    // If today is not done, check yesterday to start counting
     if (!completedSet.has(key)) {
       checkDate = yesterday;
       key = generateLogKey(habit.id, checkDate);
@@ -249,18 +260,19 @@ const HabitRow = React.memo(({
       key = generateLogKey(habit.id, checkDate);
     }
 
-    // Rough calculation for total/longest (iterating back 365 days max for performance)
-    // For a production app, you might want to calculate 'longest' on the backend
     const lookback = new Date(habit.startDate);
     const end = new Date();
-    for (let d = new Date(lookback); d <= end; d.setDate(d.getDate() + 1)) {
-      const k = generateLogKey(habit.id, d);
-      if (completedSet.has(k)) {
-        totalCompleted++;
-        tempStreak++;
-        longestStreak = Math.max(longestStreak, tempStreak);
-      } else {
-        tempStreak = 0;
+    // Safety check for invalid dates
+    if (!isNaN(lookback.getTime())) {
+      for (let d = new Date(lookback); d <= end; d.setDate(d.getDate() + 1)) {
+        const k = generateLogKey(habit.id, d);
+        if (completedSet.has(k)) {
+          totalCompleted++;
+          tempStreak++;
+          longestStreak = Math.max(longestStreak, tempStreak);
+        } else {
+          tempStreak = 0;
+        }
       }
     }
 
@@ -314,7 +326,6 @@ const HabitRow = React.memo(({
             isToday ? "bg-primary/5" : ""
           )}>
             <div className="flex items-center justify-center h-16 w-full relative">
-              {/* Animated Background for Completed State */}
               <AnimatePresence>
                 {isCompleted && (
                   <motion.div
